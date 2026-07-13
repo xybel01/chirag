@@ -1,5 +1,6 @@
 import { initializeApp, getApps } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { getFirestore, doc, setDoc, getDoc, getDocs, collection } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -18,6 +19,7 @@ const isFirebaseConfigured = !!(
 
 let app = null;
 let auth = null;
+let db = null;
 let googleProvider = null;
 
 if (isFirebaseConfigured) {
@@ -26,15 +28,16 @@ if (isFirebaseConfigured) {
       app = initializeApp(firebaseConfig);
     }
     auth = getAuth(app);
+    db = getFirestore(app);
     googleProvider = new GoogleAuthProvider();
-    console.log('Firebase client SDK initialized successfully.');
+    console.log('Firebase client SDK and Firestore initialized successfully.');
   } catch (error) {
     console.error('Failed to initialize Firebase client SDK:', error);
   }
 } else {
   console.warn(
     'WARNING: Firebase client environment variables are missing (VITE_FIREBASE_API_KEY, etc.).\n' +
-    'Firebase Auth will run in Simulated/Fallback Mode.'
+    'Firebase features will run in Simulated/Fallback Mode.'
   );
 }
 
@@ -44,11 +47,8 @@ if (isFirebaseConfigured) {
  */
 export async function signInWithGoogle() {
   if (!isFirebaseConfigured) {
-    // Simulated Google Login
     return new Promise((resolve) => {
-      // Simulate network latency
       setTimeout(() => {
-        // We will prompt or pick a simulated role for the developer
         const choice = window.confirm(
           "Firebase config is empty. Do you want to simulate logging in with Google as an ADMIN?\n\n" +
           "Click 'OK' for ADMIN, or 'Cancel' for standard EMPLOYEE."
@@ -71,7 +71,6 @@ export async function signInWithGoogle() {
     });
   }
 
-  // Real Firebase Google Login
   try {
     const result = await signInWithPopup(auth, googleProvider);
     const token = await result.user.getIdToken();
@@ -85,4 +84,59 @@ export async function signInWithGoogle() {
   }
 }
 
-export { auth, isFirebaseConfigured };
+/**
+ * Helper: Query all items from collection.
+ * Uses localStorage simulation in fallback mode.
+ */
+export async function getCollectionItems(collectionName) {
+  if (!isFirebaseConfigured) {
+    const list = JSON.parse(localStorage.getItem(`mock_fs_${collectionName}`) || '[]');
+    return list;
+  }
+  try {
+    const querySnapshot = await getDocs(collection(db, collectionName));
+    const items = [];
+    querySnapshot.forEach((doc) => {
+      items.push({ id: doc.id, ...doc.data() });
+    });
+    return items;
+  } catch (error) {
+    console.error(`Error fetching collection ${collectionName}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Helper: Save document to collection (creates or updates).
+ * Uses localStorage simulation in fallback mode.
+ */
+export async function setCollectionDoc(collectionName, docId, data) {
+  if (!isFirebaseConfigured) {
+    const list = JSON.parse(localStorage.getItem(`mock_fs_${collectionName}`) || '[]');
+    const index = list.findIndex(item => String(item.id) === String(docId));
+    const docData = { id: docId, ...data, updatedAt: new Date().toISOString() };
+    if (index > -1) {
+      list[index] = { ...list[index], ...docData };
+    } else {
+      docData.createdAt = new Date().toISOString();
+      list.push(docData);
+    }
+    localStorage.setItem(`mock_fs_${collectionName}`, JSON.stringify(list));
+    return docData;
+  }
+  try {
+    const docRef = doc(db, collectionName, docId);
+    const docData = { ...data, updatedAt: new Date().toISOString() };
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) {
+      docData.createdAt = new Date().toISOString();
+    }
+    await setDoc(docRef, docData, { merge: true });
+    return docData;
+  } catch (error) {
+    console.error(`Error writing document ${docId} in ${collectionName}:`, error);
+    throw error;
+  }
+}
+
+export { auth, db, isFirebaseConfigured };

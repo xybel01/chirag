@@ -15,6 +15,7 @@ import Reports from './pages/Reports.jsx';
 import Users from './pages/Users.jsx';
 import AuditLog from './pages/AuditLog.jsx';
 import MyAssets from './pages/MyAssets.jsx';
+import ImportAssets from './pages/ImportAssets.jsx';
 
 function Protected({ children, action }) {
   const { user, loading } = useAuth();
@@ -33,6 +34,7 @@ export default function App() {
       <Route element={<Protected><Layout /></Protected>}>
         <Route path="/" element={<Protected action="viewInventory"><Dashboard /></Protected>} />
         <Route path="/assets" element={<Protected action="viewInventory"><Assets /></Protected>} />
+        <Route path="/assets/import" element={<Protected action="manageInventory"><ImportAssets /></Protected>} />
         <Route path="/assets/:id" element={<Protected action="viewInventory"><AssetDetail /></Protected>} />
         <Route path="/assignments" element={<Protected action="viewInventory"><Assignments /></Protected>} />
         <Route path="/stock" element={<Protected action="viewInventory"><Stock /></Protected>} />

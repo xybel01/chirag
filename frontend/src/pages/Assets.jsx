@@ -69,7 +69,12 @@ export default function Assets() {
   return (
     <div>
       <PageHeader title="Asset Inventory" subtitle={`${data.total} assets`}
-        actions={can(user, 'manageInventory') && <button className="btn-primary" onClick={openCreate}>+ Add Asset</button>} />
+        actions={can(user, 'manageInventory') && (
+          <div className="flex gap-2">
+            <button className="btn-secondary" onClick={() => navigate('/assets/import')}>Import Assets</button>
+            <button className="btn-primary" onClick={openCreate}>+ Add Asset</button>
+          </div>
+        )} />
 
       <div className="mb-4 flex flex-wrap gap-3">
         <input className="input max-w-xs" placeholder="Search tag, serial, model…" value={search}
