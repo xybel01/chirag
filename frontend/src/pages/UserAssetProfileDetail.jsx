@@ -458,12 +458,14 @@ export default function UserAssetProfileDetail() {
           <div><span className="text-gray-400 font-bold">Employee ID:</span> <span className="font-semibold text-gray-700">{profile.employeeId || '—'}</span></div>
           <div><span className="text-gray-400 font-bold">Email ID:</span> <span className="font-semibold text-gray-700">{profile.email}</span></div>
           <div><span className="text-gray-400 font-bold">Location:</span> <span className="font-semibold text-gray-700">{profile.location || '—'}</span></div>
+          <div><span className="text-gray-400 font-bold">Mobile:</span> <span className="font-semibold text-gray-700">{profile.mobileNumber || '—'}</span></div>
         </div>
 
         <div className="text-xs space-y-1">
           <div><span className="text-gray-400 font-bold">Company Name:</span> <span className="font-semibold text-gray-700">{profile.companyName}</span></div>
           <div><span className="text-gray-400 font-bold">Department:</span> <span className="font-semibold text-gray-700">{profile.department}</span></div>
-          <div><span className="text-gray-400 font-bold">Status:</span> <span className="font-bold text-emerald-600 uppercase text-2xs tracking-wide">{profile.employmentStatus}</span></div>
+          <div><span className="text-gray-400 font-bold">Joining Date:</span> <span className="font-semibold text-gray-700">{profile.joiningDate || '—'}</span></div>
+          <div><span className="text-gray-400 font-bold">Clearance:</span> <span className={`font-bold uppercase text-2xs ${totalAssigned === 0 ? 'text-emerald-600' : 'text-blue-600'}`}>{totalAssigned === 0 ? 'Asset Cleared' : 'Pending Clearance'}</span></div>
         </div>
 
         <div className="bg-slate-50 p-4 rounded-2xl border border-gray-100 text-center grid grid-cols-3 gap-2">

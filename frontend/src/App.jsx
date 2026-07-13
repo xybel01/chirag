@@ -20,6 +20,7 @@ import ITSMDashboard from './pages/ITSMDashboard.jsx';
 import UserAssetProfiles from './pages/UserAssetProfiles.jsx';
 import UserAssetProfileDetail from './pages/UserAssetProfileDetail.jsx';
 import AssignAssets from './pages/AssignAssets.jsx';
+import AssetCategoryList from './pages/AssetCategoryList.jsx';
 
 function Protected({ children, action }) {
   const { user, loading } = useAuth();
@@ -40,6 +41,17 @@ export default function App() {
         <Route path="/itsm-dashboard" element={<Protected action="viewInventory"><ITSMDashboard /></Protected>} />
         <Route path="/user-profiles" element={<Protected action="viewInventory"><UserAssetProfiles /></Protected>} />
         <Route path="/user-profiles/:id" element={<Protected action="viewInventory"><UserAssetProfileDetail /></Protected>} />
+        
+        {/* Granular category inventory list endpoints */}
+        <Route path="/inventory/computers" element={<Protected action="viewInventory"><AssetCategoryList type="computers" /></Protected>} />
+        <Route path="/inventory/laptops" element={<Protected action="viewInventory"><AssetCategoryList type="laptops" /></Protected>} />
+        <Route path="/inventory/desktops" element={<Protected action="viewInventory"><AssetCategoryList type="desktops" /></Protected>} />
+        <Route path="/inventory/monitors" element={<Protected action="viewInventory"><AssetCategoryList type="monitors" /></Protected>} />
+        <Route path="/inventory/printers" element={<Protected action="viewInventory"><AssetCategoryList type="printers" /></Protected>} />
+        <Route path="/inventory/network" element={<Protected action="viewInventory"><AssetCategoryList type="network" /></Protected>} />
+        <Route path="/inventory/mobile" element={<Protected action="viewInventory"><AssetCategoryList type="mobile" /></Protected>} />
+        <Route path="/inventory/accessories" element={<Protected action="viewInventory"><AssetCategoryList type="accessories" /></Protected>} />
+
         <Route path="/assets" element={<Protected action="viewInventory"><Assets /></Protected>} />
         <Route path="/assets/import" element={<Protected action="manageInventory"><ImportAssets /></Protected>} />
         <Route path="/assets/assign" element={<Protected action="manageInventory"><AssignAssets /></Protected>} />

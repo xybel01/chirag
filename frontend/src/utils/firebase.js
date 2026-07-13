@@ -196,9 +196,9 @@ if (!isFirebaseConfigured) {
 
   // Seed employees / users
   seedMockCollection('users', [
-    { id: 'usr-001', employeeId: 'EMP-001', employeeName: 'Chirag Gohil', email: 'chirag@nationwide-paper.com', department: 'IT', designation: 'IT Executive', companyName: 'Nationwide Paper', location: 'Head Office', reportingManager: 'John Doe', mobileNumber: '+91 98765 43210', employmentStatus: 'ACTIVE', profilePhoto: null },
-    { id: 'usr-002', employeeId: 'EMP-002', employeeName: 'Darpit Ghadiya', email: 'accounts1@inventurewholesale.co.uk', department: 'Account', designation: 'Senior Accountant', companyName: 'Inventure Wholesale', location: 'Warehouse 1', reportingManager: 'Sarah Jenkins', mobileNumber: '+91 98765 43211', employmentStatus: 'ACTIVE', profilePhoto: null },
-    { id: 'usr-003', employeeId: 'EMP-003', employeeName: 'Aaryan Patil', email: 'aaryan.patil@nationwide-paper.com', department: 'HR', designation: 'HR Generalist', companyName: 'Nationwide Paper', location: 'Branch Office', reportingManager: 'Jane Smith', mobileNumber: '+91 98765 43212', employmentStatus: 'ACTIVE', profilePhoto: null }
+    { id: 'usr-001', employeeId: 'EMP-001', employeeName: 'Chirag Gohil', email: 'chirag@nationwide-paper.com', department: 'IT', designation: 'IT Executive', companyName: 'Nationwide Paper', location: 'Head Office', reportingManager: 'John Doe', mobileNumber: '+91 98765 43210', employmentStatus: 'ACTIVE', profilePhoto: null, joiningDate: '2023-01-15', leavingDate: null, assetClearanceStatus: 'HOLDING' },
+    { id: 'usr-002', employeeId: 'EMP-002', employeeName: 'Darpit Ghadiya', email: 'accounts1@inventurewholesale.co.uk', department: 'Account', designation: 'Senior Accountant', companyName: 'Inventure Wholesale', location: 'Warehouse 1', reportingManager: 'Sarah Jenkins', mobileNumber: '+91 98765 43211', employmentStatus: 'ACTIVE', profilePhoto: null, joiningDate: '2022-06-01', leavingDate: null, assetClearanceStatus: 'HOLDING' },
+    { id: 'usr-003', employeeId: 'EMP-003', employeeName: 'Aaryan Patil', email: 'aaryan.patil@nationwide-paper.com', department: 'HR', designation: 'HR Generalist', companyName: 'Nationwide Paper', location: 'Branch Office', reportingManager: 'Jane Smith', mobileNumber: '+91 98765 43212', employmentStatus: 'ACTIVE', profilePhoto: null, joiningDate: '2024-03-10', leavingDate: null, assetClearanceStatus: 'CLEARED' }
   ]);
 
   // Seed standard assets for assignment dropdowns
@@ -216,7 +216,12 @@ if (!isFirebaseConfigured) {
     { id: 'NPL-MOB-0003', assetId: 'NPL-MOB-0003', category: 'Mobile Phone', subcategory: 'MOB', manufacturer: 'Samsung', model: 'Galaxy A14', serialNumber: 'SN-MOB-003', brand: 'Samsung', imeiNumber: '358912345678901', mobileNumber: '+91 99999 88888', simNumber: '8991123456789012345f', networkProvider: 'Jio', condition: 'Good', status: 'AVAILABLE' },
     { id: 'NPL-LC-0010', assetId: 'NPL-LC-0010', category: 'Laptop Charger', subcategory: 'LC', manufacturer: 'Lenovo', model: '65W Type-C', serialNumber: 'SN-LC-010', brand: 'Lenovo', wattage: '65W', chargerType: 'Type-C', condition: 'Good', status: 'AVAILABLE' },
     { id: 'NPL-MC-0006', assetId: 'NPL-MC-0006', category: 'Mobile Charger', subcategory: 'MC', manufacturer: 'Samsung', model: '25W PD Adapter', serialNumber: 'SN-MC-006', brand: 'Samsung', wattage: '25W', chargerType: 'Type-C', condition: 'Good', status: 'AVAILABLE' },
-    { id: 'NPL-PRN-0004', assetId: 'NPL-PRN-0004', category: 'Printer', subcategory: 'PRN', manufacturer: 'HP', model: 'LaserJet Pro M404dn', serialNumber: 'SN-PRN-004', brand: 'HP', ipAddress: '192.168.1.150', macAddress: '00:11:22:33:44:77', connectionType: 'Network', condition: 'Good', status: 'AVAILABLE' }
+    { id: 'NPL-PRN-0004', assetId: 'NPL-PRN-0004', category: 'Printer', subcategory: 'PRN', manufacturer: 'HP', model: 'LaserJet Pro M404dn', serialNumber: 'SN-PRN-004', brand: 'HP', ipAddress: '192.168.1.150', macAddress: '00:11:22:33:44:77', connectionType: 'Network', condition: 'Good', status: 'AVAILABLE' },
+    { id: 'NPL-NET-0001', assetId: 'NPL-NET-0001', category: 'Network Device', subcategory: 'SW', deviceType: 'Switch', manufacturer: 'Cisco', model: 'Catalyst C9200', serialNumber: 'SN-NET-9200', hostName: 'NPL-SW-0001', macAddress: '00:11:22:33:44:88', ipAddress: '192.168.1.2', condition: 'Good', status: 'AVAILABLE' },
+    { id: 'NPL-NET-0002', assetId: 'NPL-NET-0002', category: 'Network Device', subcategory: 'AP', deviceType: 'Access Point', manufacturer: 'UniFi', model: 'UAP-AC-PRO', serialNumber: 'SN-NET-ACPRO', hostName: 'NPL-AP-0001', macAddress: '00:11:22:33:44:99', ipAddress: '192.168.1.5', condition: 'Good', status: 'AVAILABLE' },
+    { id: 'NPL-ACC-0001', assetId: 'NPL-ACC-0001', category: 'Accessory', subcategory: 'ACC', manufacturer: 'Targus', model: 'CitySmart Backpack', serialNumber: 'SN-BAG-001', condition: 'Good', status: 'AVAILABLE' },
+    { id: 'NPL-ACC-0002', assetId: 'NPL-ACC-0002', category: 'Accessory', subcategory: 'ACC', manufacturer: 'SanDisk', model: 'Cruzer 64GB Pen Drive', serialNumber: 'SN-PEN-002', condition: 'Good', status: 'AVAILABLE' },
+    { id: 'NPL-ACC-0003', assetId: 'NPL-ACC-0003', category: 'Accessory', subcategory: 'ACC', manufacturer: 'Western Digital', model: 'My Passport 2TB HDD', serialNumber: 'SN-EXT-003', condition: 'Good', status: 'AVAILABLE' }
   ]);
 }
 
