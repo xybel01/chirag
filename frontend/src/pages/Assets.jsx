@@ -61,6 +61,14 @@ export default function Assets() {
     } catch (err) { setError(apiError(err)); }
   };
 
+  const handleDelete = async (asset) => {
+    if (!window.confirm(`Are you sure you want to delete asset ${asset.assetTag}?`)) return;
+    try {
+      await api.delete(`/assets/${asset.id}`);
+      load();
+    } catch (err) { alert(apiError(err)); }
+  };
+
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v?.target ? v.target.value : v }));
 
   const selectedCat = meta.categories?.find((c) => String(c.id) === String(form.categoryId || modal?.asset?.categoryId));
@@ -95,6 +103,31 @@ export default function Assets() {
           { header: 'Assigned To', render: (a) => a.assignedTo?.name || '—' },
           { header: 'Location', render: (a) => a.location?.name || '—' },
           { header: 'Warranty End', render: (a) => fmtDate(a.warrantyEnd) },
+          { 
+            header: 'Actions', 
+            render: (a) => (
+              <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+                {can(user, 'manageInventory') && (
+                  <>
+                    <button 
+                      onClick={() => openEdit(a)} 
+                      className="px-2 py-1 text-2xs font-semibold bg-brand-50 border border-brand-200 text-brand-700 rounded-lg hover:bg-brand-100 transition-colors"
+                    >
+                      Edit
+                    </button>
+                    {user?.role === 'ADMIN' && (
+                      <button 
+                        onClick={() => handleDelete(a)} 
+                        className="px-2 py-1 text-2xs font-semibold bg-red-50 border border-red-200 text-red-700 rounded-lg hover:bg-red-100 transition-colors"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )
+          }
         ]}
         rows={data.items} page={data.page} pageSize={data.pageSize} total={data.total}
         onPage={(p) => { const n = new URLSearchParams(params); n.set('page', p); setParams(n); }}
