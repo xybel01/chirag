@@ -73,6 +73,15 @@ export default function AssetDetail() {
     } catch (err) { setError(apiError(err)); } finally { setBusy(false); }
   };
 
+  // Extract installed software list from notes if present
+  let softwareList = [];
+  let notesDisplay = asset.notes || '';
+  if (asset.notes && asset.notes.includes('Installed Software:')) {
+    const parts = asset.notes.split('Installed Software:');
+    notesDisplay = parts[0].trim();
+    softwareList = parts[1] ? parts[1].trim().split('\n').filter(Boolean) : [];
+  }
+
   const info = [
     ['Category', asset.category?.name], ['Manufacturer', asset.manufacturer], ['Model', asset.model],
     ['Serial Number', asset.serialNumber],
@@ -99,7 +108,7 @@ export default function AssetDetail() {
     ['Purchase Date', fmtDate(asset.purchaseDate)], ['Purchase Price', fmtMoney(asset.purchasePrice)],
     ['Warranty', `${fmtDate(asset.warrantyStart)} → ${fmtDate(asset.warrantyEnd)}`],
     ['Location', asset.location?.name || '—'], ['Department', asset.department?.name || '—'],
-    ['Assigned To', asset.assignedTo?.name || '—'], ['Notes', asset.notes || '—']
+    ['Assigned To', asset.assignedTo?.name || '—'], ['Notes', notesDisplay || '—']
   );
 
   return (
@@ -176,6 +185,29 @@ export default function AssetDetail() {
           </tbody>
         </table>
       </div>
+
+      {softwareList.length > 0 && (
+        <div className="card mt-6 p-5">
+          <h3 className="mb-3 font-semibold text-gray-700">Installed Software Catalog ({softwareList.length} apps detected)</h3>
+          <div className="max-h-72 overflow-y-auto border border-gray-100 rounded-2xl bg-slate-50/50 p-4">
+            <ul className="grid gap-2 sm:grid-cols-2 md:grid-cols-3">
+              {softwareList.map((app, idx) => {
+                const match = app.replace(/^- /, '').match(/^(.+?)\s*\(([^)]+)\)$/);
+                const name = match ? match[1] : app.replace(/^- /, '');
+                const version = match ? match[2] : 'unknown';
+                return (
+                  <li key={idx} className="p-2.5 border border-gray-150 rounded-xl bg-white flex justify-between items-center text-xs">
+                    <span className="font-semibold text-gray-800 truncate" title={name}>{name}</span>
+                    <span className="rounded bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-3xs font-black text-indigo-700 select-all">
+                      v{version}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </div>
+      )}
 
       <Modal open={!!modal} title={`${form.action.charAt(0) + form.action.slice(1).toLowerCase()} — ${asset.assetTag}`} onClose={() => setModal(false)}>
         {error && <div className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}

@@ -29,6 +29,7 @@ app.use('/api/dashboard', require('./routes/dashboard.routes'));
 app.use('/api/audit', require('./routes/audit.routes'));
 app.use('/api/files', require('./routes/files.routes'));
 app.use('/api/ai', require('./routes/ai.routes'));
+app.use('/api/agent', require('./routes/agent.routes'));
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 app.use(errorHandler);
