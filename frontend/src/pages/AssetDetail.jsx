@@ -11,6 +11,38 @@ import { fmtDate, fmtMoney } from '../utils/format.js';
 
 const ACTIONS = ['ASSIGN', 'RETURN', 'TRANSFER', 'REPLACE', 'REPAIR', 'DISPOSE'];
 
+const parseCustomNotes = (notesStr) => {
+  if (!notesStr) return null;
+  
+  const hostMatch = notesStr.match(/Host\s*Name:\s*([^\n\r|;]+)/i) || notesStr.match(/HostName:\s*([^\n\r|;]+)/i);
+  const macMatch = notesStr.match(/MAC\s*Address:\s*([^\n\r|;]+)/i) || notesStr.match(/macAddress:\s*([^\n\r|;]+)/i);
+  const ipMatch = notesStr.match(/IP\s*Address:\s*([^\n\r|;]+)/i) || notesStr.match(/ipAddress:\s*([^\n\r|;]+)/i);
+  const remarkMatch = notesStr.match(/Remark:\s*([^\n\r|;]+)/i) || notesStr.match(/remark:\s*([^\n\r|;]+)/i);
+
+  const getCleanVal = (match, nextKeywords) => {
+    if (!match) return null;
+    let val = match[1].trim();
+    nextKeywords.forEach(kw => {
+      const idx = val.toLowerCase().indexOf(kw.toLowerCase());
+      if (idx > -1) {
+        val = val.substring(0, idx).trim();
+      }
+    });
+    return val;
+  };
+
+  const nextKws = ['MAC Address', 'macAddress', 'IP Address', 'ipAddress', 'Remark', 'remark'];
+  const hostName = getCleanVal(hostMatch, nextKws);
+  const macAddress = getCleanVal(macMatch, nextKws);
+  const ipAddress = getCleanVal(ipMatch, nextKws);
+  const remark = getCleanVal(remarkMatch, nextKws);
+
+  if (hostName || macAddress || ipAddress || remark) {
+    return { hostName, macAddress, ipAddress, remark };
+  }
+  return null;
+};
+
 export default function AssetDetail() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -48,8 +80,18 @@ export default function AssetDetail() {
 
   if (asset.category && ['LAP', 'DSK'].includes(asset.category.code)) {
     info.push(['CPU Configuration', asset.cpu || '—']);
-    info.push(['RAM', asset.ram || '—']);
+    const cleanRam = asset.ram ? String(asset.ram).replace(/ram/i, '').trim() : '—';
+    info.push(['RAM', cleanRam]);
     info.push(['Hard Drive (Storage)', asset.storage || '—']);
+  }
+
+  // Parse custom parameters out of the notes string
+  const customNotes = parseCustomNotes(asset.notes);
+  if (customNotes) {
+    if (customNotes.hostName) info.push(['Host Name', customNotes.hostName]);
+    if (customNotes.macAddress) info.push(['MAC Address', customNotes.macAddress]);
+    if (customNotes.ipAddress) info.push(['IP Address', customNotes.ipAddress]);
+    if (customNotes.remark) info.push(['Remark', customNotes.remark]);
   }
 
   info.push(
