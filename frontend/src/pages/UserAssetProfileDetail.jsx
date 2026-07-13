@@ -5,6 +5,8 @@ import { useAuth } from '../context/AuthContext.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
 import { Field, Select } from '../components/FormField.jsx';
+import api from '../api/client';
+import { fmtMoney, fmtDate } from '../utils/format.js';
 
 export default function UserAssetProfileDetail() {
   const { id } = useParams();
@@ -18,6 +20,7 @@ export default function UserAssetProfileDetail() {
   const [allUsers, setAllUsers] = useState([]);
   const [assignments, setAssignments] = useState([]);
   const [history, setHistory] = useState([]);
+  const [profileLicenses, setProfileLicenses] = useState([]);
 
   // Modal control states
   const [returnAllModal, setReturnAllModal] = useState(false);
@@ -70,6 +73,16 @@ export default function UserAssetProfileDetail() {
 
       const userHistory = historyList.filter((h) => String(h.userId) === String(id));
       setHistory(userHistory);
+
+      try {
+        const licensesRes = await api.get('/licenses', { params: { pageSize: 100 } });
+        const userLicenses = (licensesRes.data?.items || []).filter(l =>
+          l.assignments?.some(a => String(a.userId) === String(id) || String(a.user?.id) === String(id))
+        );
+        setProfileLicenses(userLicenses);
+      } catch (err) {
+        console.warn('Backend server is offline or mock licenses empty. Skipping licenses fetch.');
+      }
 
       // Pre-initialize return conditions
       const conds = {};
@@ -378,7 +391,10 @@ export default function UserAssetProfileDetail() {
           <strong>SN:</strong> {asset.serialNumber} <br />
           {asset.screenSize && <><strong>Screen:</strong> {asset.screenSize} <br /></>}
           {asset.ram && <><strong>Specs:</strong> {asset.ram} | {asset.storage || '—'} <br /></>}
-          <strong>Condition:</strong> {asset.condition}
+          <strong>Condition:</strong> {asset.condition} <br />
+          {asset.purchasePrice && <><strong>Price:</strong> {fmtMoney(asset.purchasePrice)} <br /></>}
+          {asset.purchaseDate && <><strong>Purchase Date:</strong> {fmtDate(asset.purchaseDate)} <br /></>}
+          {asset.warrantyExpiry && <><strong>Warranty Expiry:</strong> {fmtDate(asset.warrantyExpiry)} <br /></>}
         </p>
       </div>
 
@@ -558,9 +574,34 @@ export default function UserAssetProfileDetail() {
           </div>
         </div>
 
+        {/* Category: Software Licenses */}
+        <div className="space-y-3">
+          <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider border-b border-gray-100 pb-1">8. Software Licenses</h3>
+          <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+            {profileLicenses.map((lic) => (
+              <div key={lic.id} className="border border-gray-100 rounded-2xl p-4 bg-white shadow-xs space-y-2 text-xs">
+                <div className="flex justify-between items-center">
+                  <span className="font-extrabold text-indigo-900 text-xs">{lic.type}</span>
+                  <span className="rounded bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-3xs font-extrabold text-indigo-700">
+                    License
+                  </span>
+                </div>
+                <h4 className="text-xs font-bold text-gray-800">{lic.name}</h4>
+                <p className="text-2xs text-gray-500 leading-normal">
+                  {lic.costPerSeat && <><strong>Price / Seat:</strong> {fmtMoney(lic.costPerSeat)} <br /></>}
+                  {lic.purchaseDate && <><strong>Purchased:</strong> {fmtDate(lic.purchaseDate)} <br /></>}
+                  {lic.expiryDate && <><strong>Expiry Date:</strong> {fmtDate(lic.expiryDate)} <br /></>}
+                  {lic.vendor?.name && <><strong>Supplier:</strong> {lic.vendor.name} <br /></>}
+                </p>
+              </div>
+            ))}
+            {profileLicenses.length === 0 && <span className="text-gray-400 text-xs col-span-4">No software licenses assigned.</span>}
+          </div>
+        </div>
+
         {/* Assignment History Logs */}
         <div className="space-y-3">
-          <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider border-b border-gray-100 pb-1">8. Historical Operations Log</h3>
+          <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider border-b border-gray-100 pb-1">9. Historical Operations Log</h3>
           <div className="border border-gray-100 rounded-2xl bg-white overflow-hidden">
             <table className="w-full text-xs text-left">
               <thead className="bg-slate-50 text-gray-500 border-b border-gray-150">
