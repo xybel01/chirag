@@ -11,7 +11,7 @@ import { Field, Select } from '../components/FormField.jsx';
 import { fmtDate } from '../utils/format.js';
 
 const STATUSES = ['AVAILABLE', 'ASSIGNED', 'REPAIR', 'FAULTY', 'LOST', 'DISPOSED'];
-const EMPTY = { serialNumber: '', model: '', manufacturer: '', categoryId: '', vendorId: '', purchaseDate: '', purchasePrice: '', warrantyStart: '', warrantyEnd: '', locationId: '', departmentId: '', notes: '' };
+const EMPTY = { serialNumber: '', model: '', manufacturer: '', categoryId: '', vendorId: '', purchaseDate: '', purchasePrice: '', warrantyStart: '', warrantyEnd: '', locationId: '', departmentId: '', notes: '', ram: '', storage: '', cpu: '' };
 
 export default function Assets() {
   const { user } = useAuth();
@@ -63,6 +63,9 @@ export default function Assets() {
 
   const set = (k) => (v) => setForm((f) => ({ ...f, [k]: v?.target ? v.target.value : v }));
 
+  const selectedCat = meta.categories?.find((c) => String(c.id) === String(form.categoryId || modal?.asset?.categoryId));
+  const showSpecs = selectedCat && ['LAP', 'DSK'].includes(selectedCat.code);
+
   return (
     <div>
       <PageHeader title="Asset Inventory" subtitle={`${data.total} assets`}
@@ -104,6 +107,13 @@ export default function Assets() {
           <Field label="Manufacturer" required><input className="input" value={form.manufacturer} onChange={set('manufacturer')} required /></Field>
           <Field label="Model" required><input className="input" value={form.model} onChange={set('model')} required /></Field>
           <Field label="Serial Number" required><input className="input" value={form.serialNumber} onChange={set('serialNumber')} required /></Field>
+          {showSpecs && (
+            <>
+              <Field label="CPU Configuration"><input className="input" placeholder="e.g. Intel Core i7 / Apple M2" value={form.cpu} onChange={set('cpu')} /></Field>
+              <Field label="RAM (Memory)"><input className="input" placeholder="e.g. 16GB" value={form.ram} onChange={set('ram')} /></Field>
+              <Field label="Hard Drive (Storage)"><input className="input" placeholder="e.g. 512GB SSD" value={form.storage} onChange={set('storage')} /></Field>
+            </>
+          )}
           <Field label="Vendor"><Select value={form.vendorId} onChange={set('vendorId')} options={meta.opts(meta.vendors)} /></Field>
           <Field label="Purchase Date"><input className="input" type="date" value={form.purchaseDate} onChange={set('purchaseDate')} /></Field>
           <Field label="Purchase Price"><input className="input" type="number" step="0.01" min="0" value={form.purchasePrice} onChange={set('purchasePrice')} /></Field>

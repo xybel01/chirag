@@ -26,6 +26,9 @@ const assetSchema = z.object({
   departmentId: z.coerce.number().int().optional().or(z.literal('')),
   status: z.enum(['AVAILABLE', 'ASSIGNED', 'REPAIR', 'FAULTY', 'LOST', 'DISPOSED']).optional(),
   notes: z.string().optional(),
+  ram: z.string().optional().or(z.literal('')),
+  storage: z.string().optional().or(z.literal('')),
+  cpu: z.string().optional().or(z.literal('')),
 }).passthrough();
 
 router.use(authenticate);

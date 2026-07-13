@@ -129,6 +129,9 @@ model Asset {
   assignedToId  Int?
   assignedTo    User?          @relation("AssetAssignee", fields: [assignedToId], references: [id])
   notes         String?
+  ram           String?
+  storage       String?
+  cpu           String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   assignments   Assignment[]

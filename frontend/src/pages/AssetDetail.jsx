@@ -43,12 +43,22 @@ export default function AssetDetail() {
 
   const info = [
     ['Category', asset.category?.name], ['Manufacturer', asset.manufacturer], ['Model', asset.model],
-    ['Serial Number', asset.serialNumber], ['Vendor', asset.vendor?.name || '—'],
+    ['Serial Number', asset.serialNumber],
+  ];
+
+  if (asset.category && ['LAP', 'DSK'].includes(asset.category.code)) {
+    info.push(['CPU Configuration', asset.cpu || '—']);
+    info.push(['RAM', asset.ram || '—']);
+    info.push(['Hard Drive (Storage)', asset.storage || '—']);
+  }
+
+  info.push(
+    ['Vendor', asset.vendor?.name || '—'],
     ['Purchase Date', fmtDate(asset.purchaseDate)], ['Purchase Price', fmtMoney(asset.purchasePrice)],
     ['Warranty', `${fmtDate(asset.warrantyStart)} → ${fmtDate(asset.warrantyEnd)}`],
     ['Location', asset.location?.name || '—'], ['Department', asset.department?.name || '—'],
-    ['Assigned To', asset.assignedTo?.name || '—'], ['Notes', asset.notes || '—'],
-  ];
+    ['Assigned To', asset.assignedTo?.name || '—'], ['Notes', asset.notes || '—']
+  );
 
   return (
     <div>

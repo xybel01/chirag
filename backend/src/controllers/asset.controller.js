@@ -66,6 +66,9 @@ function parseBody(body, files) {
     departmentId: body.departmentId ? Number(body.departmentId) : null,
     status: body.status || undefined,
     notes: body.notes || null,
+    ram: body.ram || null,
+    storage: body.storage || null,
+    cpu: body.cpu || null,
     ...(files?.invoice?.[0] ? { invoiceFile: files.invoice[0].filename } : {}),
     ...(files?.warrantyDoc?.[0] ? { warrantyFile: files.warrantyDoc[0].filename } : {}),
   };
