@@ -4,6 +4,9 @@ import AIAssistant from './AIAssistant.jsx';
 
 const NAV = [
   { to: '/', label: 'Dashboard', action: 'viewInventory' },
+  { to: '/itsm-dashboard', label: 'ITSM Dashboard', action: 'viewInventory' },
+  { to: '/user-profiles', label: 'User Asset Profiles', action: 'viewInventory' },
+  { to: '/assets/assign', label: 'Assign Assets', action: 'manageInventory' },
   { to: '/assets', label: 'Assets', action: 'viewInventory' },
   { to: '/assignments', label: 'Assignments', action: 'viewInventory' },
   { to: '/stock', label: 'Stock', action: 'viewInventory' },

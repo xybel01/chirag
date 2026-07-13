@@ -16,6 +16,10 @@ import Users from './pages/Users.jsx';
 import AuditLog from './pages/AuditLog.jsx';
 import MyAssets from './pages/MyAssets.jsx';
 import ImportAssets from './pages/ImportAssets.jsx';
+import ITSMDashboard from './pages/ITSMDashboard.jsx';
+import UserAssetProfiles from './pages/UserAssetProfiles.jsx';
+import UserAssetProfileDetail from './pages/UserAssetProfileDetail.jsx';
+import AssignAssets from './pages/AssignAssets.jsx';
 
 function Protected({ children, action }) {
   const { user, loading } = useAuth();
@@ -33,8 +37,12 @@ export default function App() {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<Protected><Layout /></Protected>}>
         <Route path="/" element={<Protected action="viewInventory"><Dashboard /></Protected>} />
+        <Route path="/itsm-dashboard" element={<Protected action="viewInventory"><ITSMDashboard /></Protected>} />
+        <Route path="/user-profiles" element={<Protected action="viewInventory"><UserAssetProfiles /></Protected>} />
+        <Route path="/user-profiles/:id" element={<Protected action="viewInventory"><UserAssetProfileDetail /></Protected>} />
         <Route path="/assets" element={<Protected action="viewInventory"><Assets /></Protected>} />
         <Route path="/assets/import" element={<Protected action="manageInventory"><ImportAssets /></Protected>} />
+        <Route path="/assets/assign" element={<Protected action="manageInventory"><AssignAssets /></Protected>} />
         <Route path="/assets/:id" element={<Protected action="viewInventory"><AssetDetail /></Protected>} />
         <Route path="/assignments" element={<Protected action="viewInventory"><Assignments /></Protected>} />
         <Route path="/stock" element={<Protected action="viewInventory"><Stock /></Protected>} />
