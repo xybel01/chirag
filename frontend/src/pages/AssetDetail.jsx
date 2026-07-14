@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import api, { apiError, fileUrl, authedImg } from '../api/client';
 import { useAuth, can } from '../context/AuthContext.jsx';
 import Modal from '../components/Modal.jsx';
@@ -14,8 +14,18 @@ const ACTIONS = ['ASSIGN', 'RETURN', 'TRANSFER', 'REPLACE', 'REPAIR', 'DISPOSE']
 export default function AssetDetail() {
   const { id } = useParams();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [asset, setAsset] = useState(null);
   const [users, setUsers] = useState([]);
+
+  // Edit asset modal state
+  const [editModal, setEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({});
+  const [editTab, setEditTab] = useState('basic');
+  const [categories, setCategories] = useState([]);
+  const [locations, setLocations] = useState([]);
+  const [vendors, setVendors] = useState([]);
+  const [departments, setDepartments] = useState([]);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({ action: 'ASSIGN', userId: '', notes: '', signature: null });
   const [error, setError] = useState('');
@@ -87,6 +97,74 @@ export default function AssetDetail() {
       load();
     } catch (err) {
       setError(apiError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loadLookups = async () => {
+    try {
+      const catRes = await api.get('/meta/categories');
+      setCategories(catRes.data);
+      const locRes = await api.get('/meta/locations');
+      setLocations(locRes.data);
+      const deptRes = await api.get('/meta/departments');
+      setDepartments(deptRes.data);
+      const vendorRes = await api.get('/meta/vendors');
+      setVendors(vendorRes.data);
+    } catch (err) {
+      console.error('Failed to load lookups for edit form:', err);
+    }
+  };
+
+  const openEdit = () => {
+    setEditForm({
+      ...asset,
+      categoryId: asset.categoryId,
+      locationId: asset.locationId || '',
+      departmentId: asset.departmentId || '',
+      vendorId: asset.vendorId || '',
+      purchaseDate: asset.purchaseDate ? asset.purchaseDate.substring(0, 10) : '',
+      warrantyStart: asset.warrantyStart ? asset.warrantyStart.substring(0, 10) : '',
+      warrantyEnd: asset.warrantyEnd ? asset.warrantyEnd.substring(0, 10) : '',
+    });
+    setEditTab('basic');
+    setError('');
+    loadLookups();
+    setEditModal(true);
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const payload = {
+        ...editForm,
+        categoryId: Number(editForm.categoryId),
+        locationId: editForm.locationId ? Number(editForm.locationId) : null,
+        departmentId: editForm.departmentId ? Number(editForm.departmentId) : null,
+        vendorId: editForm.vendorId ? Number(editForm.vendorId) : null,
+        purchasePrice: editForm.purchasePrice ? Number(editForm.purchasePrice) : null,
+      };
+      await api.put(`/assets/${asset.id}`, payload);
+      setEditModal(false);
+      load();
+    } catch (err) {
+      setError(apiError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm('Are you sure you want to delete this asset? This cannot be undone.')) return;
+    setBusy(true);
+    try {
+      await api.delete(`/assets/${asset.id}`);
+      navigate('/assets');
+    } catch (err) {
+      alert('Failed to delete asset: ' + err.message);
     } finally {
       setBusy(false);
     }
@@ -175,6 +253,12 @@ export default function AssetDetail() {
             ))}
             <button className="btn-primary" onClick={() => { setError(''); setPmModal(true); }}>
               🛠️ Log PM Check
+            </button>
+            <button className="btn-secondary text-indigo-700 bg-indigo-50 border-indigo-200" onClick={openEdit}>
+              ✏️ Edit Details
+            </button>
+            <button className="btn-secondary text-red-750 bg-red-50 border-red-200 hover:bg-red-100" onClick={handleDelete}>
+              🗑️ Delete Asset
             </button>
           </div>
         )}
@@ -347,6 +431,159 @@ export default function AssetDetail() {
           <div className="flex justify-end gap-2 border-t border-gray-50 pt-4 mt-6">
             <button type="button" className="btn-secondary" onClick={() => setPmModal(false)}>Cancel</button>
             <button className="btn-primary" disabled={busy}>{busy ? 'Saving...' : 'Add Log'}</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* EDIT CONFIGURATION MODAL */}
+      <Modal open={editModal} title={`Edit Asset Profile — ${asset.assetTag}`} onClose={() => setEditModal(false)}>
+        {error && <div className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700 font-semibold">{error}</div>}
+        
+        {/* Modal tabs */}
+        <div className="flex border-b border-gray-100 mb-4 text-xs font-bold">
+          {['basic', 'specs', 'purchase', 'network'].map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setEditTab(tab)}
+              className={`px-4 py-2 border-b-2 transition-colors uppercase tracking-wider text-3xs ${editTab === tab ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+            >
+              {tab} Details
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
+          {/* TAB 1: BASIC DETAILS */}
+          {editTab === 'basic' && (
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field label="Category" required>
+                <Select
+                  value={editForm.categoryId || ''}
+                  onChange={(v) => setEditForm({ ...editForm, categoryId: v })}
+                  options={categories.map((c) => ({ value: c.id, label: c.name }))}
+                  required
+                />
+              </Field>
+              <Field label="Manufacturer" required>
+                <input className="input" required value={editForm.manufacturer || ''} onChange={(e) => setEditForm({ ...editForm, manufacturer: e.target.value })} />
+              </Field>
+              <Field label="Model" required>
+                <input className="input" required value={editForm.model || ''} onChange={(e) => setEditForm({ ...editForm, model: e.target.value })} />
+              </Field>
+              <Field label="Serial Number" required>
+                <input className="input" required value={editForm.serialNumber || ''} onChange={(e) => setEditForm({ ...editForm, serialNumber: e.target.value })} />
+              </Field>
+              <Field label="Condition">
+                <Select
+                  value={editForm.condition || 'Good'}
+                  onChange={(v) => setEditForm({ ...editForm, condition: v })}
+                  options={[{ value: 'Good', label: 'Good' }, { value: 'Fair', label: 'Fair' }, { value: 'Damaged', label: 'Damaged' }, { value: 'Lost', label: 'Lost' }]}
+                />
+              </Field>
+              <Field label="Status">
+                <Select
+                  value={editForm.status || 'AVAILABLE'}
+                  onChange={(v) => setEditForm({ ...editForm, status: v })}
+                  options={[{ value: 'AVAILABLE', label: 'AVAILABLE' }, { value: 'ASSIGNED', label: 'ASSIGNED' }, { value: 'REPAIR', label: 'REPAIR' }, { value: 'FAULTY', label: 'FAULTY' }, { value: 'LOST', label: 'LOST' }, { value: 'DISPOSED', label: 'DISPOSED' }]}
+                />
+              </Field>
+            </div>
+          )}
+
+          {/* TAB 2: SPECS DETAILS */}
+          {editTab === 'specs' && (
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field label="CPU Configuration">
+                <input className="input" placeholder="e.g. Intel Core i7" value={editForm.cpu || ''} onChange={(e) => setEditForm({ ...editForm, cpu: e.target.value })} />
+              </Field>
+              <Field label="RAM Memory Capacity">
+                <input className="input" placeholder="e.g. 16 GB" value={editForm.ram || ''} onChange={(e) => setEditForm({ ...editForm, ram: e.target.value })} />
+              </Field>
+              <Field label="Storage Capacity">
+                <input className="input" placeholder="e.g. 512GB SSD" value={editForm.storage || ''} onChange={(e) => setEditForm({ ...editForm, storage: e.target.value })} />
+              </Field>
+              <Field label="GPU Card Model">
+                <input className="input" placeholder="e.g. RTX 4060" value={editForm.gpu || ''} onChange={(e) => setEditForm({ ...editForm, gpu: e.target.value })} />
+              </Field>
+              <Field label="OS Version Edition">
+                <input className="input" placeholder="e.g. Windows 11 Pro" value={editForm.operatingSystem || ''} onChange={(e) => setEditForm({ ...editForm, operatingSystem: e.target.value })} />
+              </Field>
+              <Field label="BitLocker Recovery Key">
+                <input className="input" placeholder="e.g. 48-digit key" value={editForm.recoveryKey || ''} onChange={(e) => setEditForm({ ...editForm, recoveryKey: e.target.value })} />
+              </Field>
+              <Field label="BitLocker Encryption Status">
+                <Select value={editForm.bitLockerStatus || 'Enabled'} onChange={(v) => setEditForm({ ...editForm, bitLockerStatus: v })} options={[{ value: 'Enabled', label: 'Enabled' }, { value: 'Disabled', label: 'Disabled' }]} />
+              </Field>
+              <Field label="TPM Security Firmware Version">
+                <input className="input" placeholder="2.0" value={editForm.tpmVersion || ''} onChange={(e) => setEditForm({ ...editForm, tpmVersion: e.target.value })} />
+              </Field>
+              <Field label="Defender Status">
+                <input className="input" placeholder="Running" value={editForm.defenderStatus || ''} onChange={(e) => setEditForm({ ...editForm, defenderStatus: e.target.value })} />
+              </Field>
+              <Field label="Firewall Status">
+                <input className="input" placeholder="Enabled" value={editForm.firewallStatus || ''} onChange={(e) => setEditForm({ ...editForm, firewallStatus: e.target.value })} />
+              </Field>
+            </div>
+          )}
+
+          {/* TAB 3: PURCHASE & WARRANTY */}
+          {editTab === 'purchase' && (
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field label="Vendor / Supplier">
+                <Select
+                  value={editForm.vendorId || ''}
+                  onChange={(v) => setEditForm({ ...editForm, vendorId: v })}
+                  options={vendors.map((v) => ({ value: v.id, label: v.name }))}
+                />
+              </Field>
+              <Field label="Purchase Price Cost">
+                <input className="input" type="number" placeholder="0.00" value={editForm.purchasePrice || ''} onChange={(e) => setEditForm({ ...editForm, purchasePrice: e.target.value })} />
+              </Field>
+              <Field label="Purchase Date">
+                <input className="input" type="date" value={editForm.purchaseDate || ''} onChange={(e) => setEditForm({ ...editForm, purchaseDate: e.target.value })} />
+              </Field>
+              <Field label="Warranty Start Date">
+                <input className="input" type="date" value={editForm.warrantyStart || ''} onChange={(e) => setEditForm({ ...editForm, warrantyStart: e.target.value })} />
+              </Field>
+              <Field label="Warranty End / Expiry Date">
+                <input className="input" type="date" value={editForm.warrantyEnd || ''} onChange={(e) => setEditForm({ ...editForm, warrantyEnd: e.target.value })} />
+              </Field>
+            </div>
+          )}
+
+          {/* TAB 4: NETWORK & LOCATIONS */}
+          {editTab === 'network' && (
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field label="Primary Office Site Location">
+                <Select
+                  value={editForm.locationId || ''}
+                  onChange={(v) => setEditForm({ ...editForm, locationId: v })}
+                  options={locations.map((l) => ({ value: l.id, label: l.name }))}
+                />
+              </Field>
+              <Field label="Owner Department">
+                <Select
+                  value={editForm.departmentId || ''}
+                  onChange={(v) => setEditForm({ ...editForm, departmentId: v })}
+                  options={departments.map((d) => ({ value: d.id, label: d.name }))}
+                />
+              </Field>
+              <Field label="Office Floor Level">
+                <input className="input" placeholder="e.g. 1st Floor" value={editForm.floor || ''} onChange={(e) => setEditForm({ ...editForm, floor: e.target.value })} />
+              </Field>
+              <Field label="Cabin / Room Number">
+                <input className="input" placeholder="e.g. Room 102" value={editForm.cabin || ''} onChange={(e) => setEditForm({ ...editForm, cabin: e.target.value })} />
+              </Field>
+              <Field label="Server Rack Number">
+                <input className="input" placeholder="e.g. Rack A-3" value={editForm.rackNumber || ''} onChange={(e) => setEditForm({ ...editForm, rackNumber: e.target.value })} />
+              </Field>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-2 border-t border-gray-50 pt-4 mt-6">
+            <button type="button" className="btn-secondary" onClick={() => setEditModal(false)}>Cancel</button>
+            <button className="btn-primary" disabled={busy}>{busy ? 'Saving changes...' : 'Save Configuration'}</button>
           </div>
         </form>
       </Modal>
