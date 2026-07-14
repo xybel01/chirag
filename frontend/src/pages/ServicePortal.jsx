@@ -35,6 +35,11 @@ export default function ServicePortal() {
   const [actionComments, setActionComments] = useState('');
   const [approvalAction, setApprovalAction] = useState('APPROVED'); // APPROVED | REJECTED
 
+  // Add category state
+  const [addCatModalOpen, setAddCatModalOpen] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatCode, setNewCatCode] = useState('');
+
   const CATALOG_ITEMS = [
     { id: 'incident', title: '💥 Report an Incident', desc: 'Report any hardware breakage, software crash, or general IT service disruption.', type: 'INCIDENT' },
     { id: 'hardware', title: '💻 Request New Hardware', desc: 'Request laptops, desktops, dual monitors, mobile phones, or desktop accessories.', type: 'SERVICE_REQUEST' },
@@ -156,6 +161,45 @@ export default function ServicePortal() {
       setError(apiError(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const getFilteredCategories = () => {
+    if (!selectedItem) return categories;
+    const isHardwareCat = (c) => {
+      const name = c.name.toLowerCase();
+      return !name.includes('license') &&
+             !name.includes('certificate') &&
+             !name.includes('domain') &&
+             !name.includes('subscription') &&
+             !name.includes('mailbox') &&
+             !name.includes('group');
+    };
+    if (selectedItem.id === 'hardware') {
+      return categories.filter(isHardwareCat);
+    }
+    if (selectedItem.id === 'software') {
+      return categories.filter(c => !isHardwareCat(c));
+    }
+    return categories;
+  };
+
+  const handleAddCategory = async (e) => {
+    e.preventDefault();
+    if (!newCatName.trim() || !newCatCode.trim()) return;
+    try {
+      const res = await api.post('/meta/categories', {
+        name: newCatName,
+        code: newCatCode.toUpperCase()
+      });
+      const catRes = await api.get('/meta/categories');
+      setCategories(catRes.data);
+      setForm((prev) => ({ ...prev, categoryId: res.data.id }));
+      setAddCatModalOpen(false);
+      setNewCatName('');
+      setNewCatCode('');
+    } catch (err) {
+      alert('Failed to add category: ' + err.message);
     }
   };
 
@@ -384,14 +428,26 @@ export default function ServicePortal() {
                     ]}
                   />
                 </Field>
-                <Field label="Category" required>
-                  <Select
-                    value={form.categoryId || ''}
-                    onChange={(v) => setForm({ ...form, categoryId: v })}
-                    options={categories.map((c) => ({ value: c.id, label: c.name }))}
-                    required
-                  />
-                </Field>
+                <div className="flex gap-2 items-end">
+                  <div className="flex-1">
+                    <Field label="Category" required>
+                      <Select
+                        value={form.categoryId || ''}
+                        onChange={(v) => setForm({ ...form, categoryId: v })}
+                        options={getFilteredCategories().map((c) => ({ value: c.id, label: c.name }))}
+                        required
+                      />
+                    </Field>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setError(''); setAddCatModalOpen(true); }}
+                    className="p-2 mb-0.5 bg-brand-50 border border-brand-200 text-brand-700 rounded-xl hover:bg-brand-100 font-extrabold text-sm h-9 flex items-center justify-center w-9"
+                    title="Add Custom Category"
+                  >
+                    +
+                  </button>
+                </div>
                 <div className="md:col-span-2">
                   <Field label="Request Summary" required>
                     <input className="input" required value={form.summary || ''} onChange={(e) => setForm({ ...form, summary: e.target.value })} />
@@ -474,6 +530,25 @@ export default function ServicePortal() {
             </button>
             <button className={`btn ${approvalAction === 'APPROVED' ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-red-600 hover:bg-red-700 text-white'}`}>
               Submit Decision
+            </button>
+          </div>
+        </form>
+      </Modal>
+      {/* ADD CUSTOM CATEGORY MODAL */}
+      <Modal open={addCatModalOpen} title="Define Custom IT Category" onClose={() => setAddCatModalOpen(false)}>
+        <form onSubmit={handleAddCategory} className="space-y-4 text-xs">
+          <Field label="Category Name" required>
+            <input className="input" required placeholder="e.g. Printer Toner" value={newCatName} onChange={(e) => setNewCatName(e.target.value)} />
+          </Field>
+          <Field label="Category Code / Abbreviation Prefix (3 letters)" required>
+            <input className="input" maxLength="5" required placeholder="e.g. TNR" value={newCatCode} onChange={(e) => setNewCatCode(e.target.value)} />
+          </Field>
+          <div className="flex justify-end gap-2 border-t border-gray-100 pt-4">
+            <button type="button" className="btn-secondary" onClick={() => setAddCatModalOpen(false)}>
+              Cancel
+            </button>
+            <button className="btn-primary">
+              Create Category
             </button>
           </div>
         </form>
