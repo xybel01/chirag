@@ -33,6 +33,7 @@ import Procurement from './pages/Procurement.jsx';
 import Monitoring from './pages/Monitoring.jsx';
 import SecurityCenter from './pages/SecurityCenter.jsx';
 import MultiCompanySettings from './pages/MultiCompanySettings.jsx';
+import Vendors from './pages/Vendors.jsx';
 
 function Protected({ children, action }) {
   const { user, loading } = useAuth();
@@ -63,6 +64,7 @@ export default function App() {
         <Route path="/monitoring" element={<Protected><Monitoring /></Protected>} />
         <Route path="/security" element={<Protected><SecurityCenter /></Protected>} />
         <Route path="/multi-company-settings" element={<Protected><MultiCompanySettings /></Protected>} />
+        <Route path="/vendors" element={<Protected><Vendors /></Protected>} />
 
         <Route path="/itsm-dashboard" element={<Protected action="viewInventory"><ITSMDashboard /></Protected>} />
         <Route path="/user-profiles" element={<Protected action="viewInventory"><UserAssetProfiles /></Protected>} />

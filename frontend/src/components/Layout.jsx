@@ -13,6 +13,7 @@ const NAV = [
   { to: '/monitoring', label: '📈 Infrastructure Monitor' },
   { to: '/security', label: '🛡️ Compliance Security' },
   { to: '/multi-company-settings', label: '🏢 Multi-Company Configs' },
+  { to: '/vendors', label: '🤝 Vendor Directory' },
   { to: '/user-profiles', label: '👤 User Asset Profiles', action: 'viewInventory' },
   { to: '/assets/assign', label: 'Assign Assets', action: 'manageInventory' },
   { to: '/inventory/computers', label: '💻 Computers', action: 'viewInventory' },

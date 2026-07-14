@@ -26,4 +26,16 @@ async function update(req, res) {
   res.json(item);
 }
 
-module.exports = { list, create, update };
+async function remove(req, res) {
+  const model = MODELS[req.params.type];
+  if (!model) return res.status(404).json({ error: 'Unknown lookup type' });
+  try {
+    const item = await prisma[model].delete({ where: { id: Number(req.params.id) } });
+    await logAudit({ userId: req.user.id, action: 'DELETE', entity: model, entityId: item.id, before: item, ip: req.ip });
+    res.json({ success: true, message: 'Item deleted' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+}
+
+module.exports = { list, create, update, remove };
