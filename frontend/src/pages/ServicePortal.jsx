@@ -47,34 +47,31 @@ export default function ServicePortal() {
 
   const loadData = async () => {
     try {
-      // Load user's tickets
       const tickRes = await api.get('/tickets', { params: { pageSize: 100 } });
       setTickets(tickRes.data.items);
+    } catch (e) { console.error('Error fetching tickets:', e); }
 
-      // Load user's pending approvals
+    try {
       const appRes = await api.get('/approvals');
       setApprovals(appRes.data);
+    } catch (e) { console.error('Error fetching approvals:', e); }
 
-      // Load user's assigned assets
+    try {
       const assetRes = await api.get('/assets', { params: { assignedToId: user.id } });
       setAssets(assetRes.data.items);
+    } catch (e) { console.error('Error fetching assets:', e); }
 
-      // Load categories & custom fields
+    try {
       const catRes = await api.get('/meta/categories');
       setCategories(catRes.data);
+    } catch (e) { console.error('Error fetching categories:', e); }
 
-      const fieldRes = await api.get('/workflow/onboarding'); // Fallback or route
-      // We can query custom fields directly if endpoint exists, or mock
-      setCustomFields([
-        { id: 1, name: 'M365 License Type Required', fieldType: 'SELECT', options: ['Business Premium', 'E3', 'E5'] },
-        { id: 2, name: 'Affected Server Hostname', fieldType: 'TEXT' }
-      ]);
-
-      const usersRes = await api.get('/users', { params: { pageSize: 100 } });
-      setUsers(usersRes.data.items);
-    } catch (err) {
-      console.error('Error fetching portal data:', err);
-    }
+    try {
+      if (['SUPER_ADMIN', 'IT_MANAGER', 'IT_SUPPORT', 'HR'].includes(user.role)) {
+        const usersRes = await api.get('/users', { params: { pageSize: 100 } });
+        setUsers(usersRes.data.items);
+      }
+    } catch (e) { console.error('Error fetching users directory:', e); }
   };
 
   useEffect(() => {
