@@ -579,3 +579,23 @@ model CustomFieldValue {
   ticket        Ticket      @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   value         String
 }
+
+model PurchaseRequest {
+  id            Int      @id @default(autoincrement())
+  title         String
+  costCenter    String
+  estimatedCost Decimal  @db.Decimal(12, 2)
+  status        String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  requestedBy   String?
+  createdAt     DateTime @default(now())
+}
+
+model PurchaseOrder {
+  id            Int      @id @default(autoincrement())
+  poNumber      String   @unique
+  vendorName    String
+  totalAmount   Decimal  @db.Decimal(12, 2)
+  status        String   @default("DRAFT") // APPROVED, RECEIVED, COMPLETED
+  costCenter    String
+  createdAt     DateTime @default(now())
+}

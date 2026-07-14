@@ -29,6 +29,10 @@ import TicketDetail from './pages/TicketDetail.jsx';
 import ChangeCalendar from './pages/ChangeCalendar.jsx';
 import KnowledgeBase from './pages/KnowledgeBase.jsx';
 import AdminITSM from './pages/AdminITSM.jsx';
+import Procurement from './pages/Procurement.jsx';
+import Monitoring from './pages/Monitoring.jsx';
+import SecurityCenter from './pages/SecurityCenter.jsx';
+import MultiCompanySettings from './pages/MultiCompanySettings.jsx';
 
 function Protected({ children, action }) {
   const { user, loading } = useAuth();
@@ -55,6 +59,10 @@ export default function App() {
         <Route path="/changes-calendar" element={<Protected><ChangeCalendar /></Protected>} />
         <Route path="/kb" element={<Protected><KnowledgeBase /></Protected>} />
         <Route path="/admin-itsm" element={<Protected><AdminITSM /></Protected>} />
+        <Route path="/procurement" element={<Protected><Procurement /></Protected>} />
+        <Route path="/monitoring" element={<Protected><Monitoring /></Protected>} />
+        <Route path="/security" element={<Protected><SecurityCenter /></Protected>} />
+        <Route path="/multi-company-settings" element={<Protected><MultiCompanySettings /></Protected>} />
 
         <Route path="/itsm-dashboard" element={<Protected action="viewInventory"><ITSMDashboard /></Protected>} />
         <Route path="/user-profiles" element={<Protected action="viewInventory"><UserAssetProfiles /></Protected>} />
