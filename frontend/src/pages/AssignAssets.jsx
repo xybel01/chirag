@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { getCollectionItems, runFirestoreBatch } from '../utils/firebase.js';
+import api, { apiError } from '../api/client';
 import PageHeader from '../components/PageHeader.jsx';
 import { Field, Select } from '../components/FormField.jsx';
 import Modal from '../components/Modal.jsx';
@@ -20,8 +20,7 @@ export default function AssignAssets() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [notes, setNotes] = useState('');
 
-  // Selected Assets state: sectionKey -> Array of asset IDs (or single ID)
-  // For multiple select, we store array. For single select, we store a string/id.
+  // Selected Assets state
   const [selectedAssets, setSelectedAssets] = useState({
     mainComputer: '',
     displays: [],
@@ -31,56 +30,59 @@ export default function AssignAssets() {
     mobile: '',
     chargers: [],
     printers: '',
-    accessories: '',
   });
 
   // UI state
   const [confirmModal, setConfirmModal] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  // Signature Canvas
+  const canvasRef = useRef(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [hasSignature, setHasSignature] = useState(false);
+
+  const loadData = async () => {
+    try {
+      const usersRes = await api.get('/users', { params: { pageSize: 500 } });
+      setUsers(usersRes.data.items || []);
+
+      const assetsRes = await api.get('/assets', { params: { status: 'AVAILABLE', pageSize: 1000 } });
+      setAssets(assetsRes.data.items || []);
+
+      if (initialUserId) {
+        const matched = usersRes.data.items?.find((u) => String(u.id) === String(initialUserId));
+        setSelectedUser(matched || null);
+      }
+    } catch (err) {
+      console.error('Failed to load assignment data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function loadData() {
-      try {
-        const usersList = await getCollectionItems('users');
-        const assetsList = await getCollectionItems('assets');
-        setUsers(usersList);
-        setAssets(assetsList);
-        
-        if (initialUserId) {
-          const matched = usersList.find(u => String(u.id) === String(initialUserId));
-          setSelectedUser(matched || null);
-        }
-      } catch (err) {
-        console.error('Error loading assignment form data:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
     loadData();
   }, [initialUserId]);
 
   const handleUserChange = (userId) => {
     setSelectedUserId(userId);
-    const matched = users.find(u => String(u.id) === String(userId));
+    const matched = users.find((u) => String(u.id) === String(userId));
     setSelectedUser(matched || null);
     setError('');
   };
 
-  // Get available assets for a category or list of categories
-  const getAvailableAssets = (categories) => {
-    return assets.filter(
-      (a) => categories.includes(a.category) && a.status === 'AVAILABLE'
-    );
+  const getAvailableAssets = (categoryNames) => {
+    return assets.filter((a) => categoryNames.includes(a.category?.name));
   };
 
-  // Update selection
   const toggleAssetSelect = (sectionKey, assetId, isMultiple = false) => {
     setSelectedAssets((prev) => {
       if (isMultiple) {
         const currentList = prev[sectionKey] || [];
         const index = currentList.indexOf(assetId);
         if (index > -1) {
-          return { ...prev, [sectionKey]: currentList.filter(id => id !== assetId) };
+          return { ...prev, [sectionKey]: currentList.filter((id) => id !== assetId) };
         } else {
           return { ...prev, [sectionKey]: [...currentList, assetId] };
         }
@@ -90,10 +92,9 @@ export default function AssignAssets() {
     });
   };
 
-  // Flatten all selected asset IDs into a single list
   const getSelectedAssetIdsList = () => {
     const list = [];
-    Object.entries(selectedAssets).forEach(([key, val]) => {
+    Object.entries(selectedAssets).forEach(([_, val]) => {
       if (Array.isArray(val)) {
         list.push(...val);
       } else if (val) {
@@ -103,7 +104,6 @@ export default function AssignAssets() {
     return list;
   };
 
-  // Validate form selections
   const validateForm = () => {
     if (!selectedUserId) {
       setError('Please select an employee first.');
@@ -111,23 +111,9 @@ export default function AssignAssets() {
     }
     const selectedIds = getSelectedAssetIdsList();
     if (selectedIds.length === 0) {
-      setError('Please select at least one asset to assign.');
+      setError('Please select at least one hardware asset to assign.');
       return false;
     }
-
-    // Verify all selected assets are indeed still AVAILABLE
-    for (const id of selectedIds) {
-      const asset = assets.find(a => String(a.id) === String(id));
-      if (!asset) {
-        setError(`Asset reference not found: ${id}`);
-        return false;
-      }
-      if (asset.status !== 'AVAILABLE') {
-        setError(`Asset ${asset.assetId} (${asset.manufacturer} ${asset.model}) is no longer available.`);
-        return false;
-      }
-    }
-
     setError('');
     return true;
   };
@@ -139,494 +125,330 @@ export default function AssignAssets() {
     }
   };
 
+  // Canvas Drawing Methods
+  const startDrawing = (e) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setIsDrawing(true);
+  };
+
+  const draw = (e) => {
+    if (!isDrawing) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    setHasSignature(true);
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+  };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setHasSignature(false);
+  };
+
   const executeAssignment = async () => {
     setBusy(true);
     setError('');
-    
+    setSuccess('');
     try {
       const selectedIds = getSelectedAssetIdsList();
-      const assignmentNumber = `ASN-${Date.now()}`;
-      const assignmentId = `assignment-${Date.now()}`;
-      
-      const operations = [];
+      let signatureDataUrl = '';
+      if (hasSignature && canvasRef.current) {
+        signatureDataUrl = canvasRef.current.toDataURL();
+      }
 
-      // 1. Create Master Assignment Document
-      const masterAssignment = {
-        assignmentNumber,
-        userId: selectedUserId,
-        employeeName: selectedUser.employeeName,
-        employeeEmail: selectedUser.email,
-        companyName: selectedUser.companyName,
-        department: selectedUser.department,
-        assignedBy: 'System Admin', // logged in user mock
-        assignedByName: 'System Admin',
-        assignmentDate: new Date().toISOString(),
-        status: 'ASSIGNED',
-        totalAssets: selectedIds.length,
-        acknowledgementStatus: 'PENDING',
-        acknowledgementDocumentUrl: null,
-        notes: notes || 'Batch User-Wise Assignment',
-      };
+      // Assign all selected assets sequentially
+      await Promise.all(
+        selectedIds.map((id) =>
+          api.post('/assignments', {
+            assetId: Number(id),
+            userId: Number(selectedUserId),
+            action: 'ASSIGN',
+            notes: notes || 'Batch User-Wise Asset Handover Assignment Form',
+            signature: signatureDataUrl || undefined,
+          })
+        )
+      );
 
-      operations.push({
-        type: 'SET',
-        collectionName: 'assignments',
-        docId: assignmentId,
-        data: masterAssignment,
-      });
-
-      // 2. Create Assignment Items & Update Asset Statuses
-      selectedIds.forEach((id) => {
-        const asset = assets.find((a) => String(a.id) === String(id));
-        const itemId = `item-${id}-${Date.now()}`;
-
-        // Assignment Item document
-        const assignmentItem = {
-          assignmentId,
-          userId: selectedUserId,
-          assetId: asset.assetId,
-          assetDocumentId: asset.id,
-          category: asset.category,
-          subcategory: asset.subcategory || null,
-          manufacturer: asset.manufacturer,
-          model: asset.model,
-          serialNumber: asset.serialNumber,
-          conditionAtAssignment: asset.condition || 'Good',
-          assignedDate: new Date().toISOString(),
-          status: 'ASSIGNED',
-        };
-
-        operations.push({
-          type: 'SET',
-          collectionName: 'assignmentItems',
-          docId: itemId,
-          data: assignmentItem,
-        });
-
-        // Update Asset fields
-        const updatedAsset = {
-          ...asset,
-          status: 'ASSIGNED',
-          assignedUserId: selectedUserId,
-          assignedUserName: selectedUser.employeeName,
-          assignmentId: assignmentId,
-        };
-
-        operations.push({
-          type: 'SET',
-          collectionName: 'assets',
-          docId: asset.id,
-          data: updatedAsset,
-        });
-
-        // Create Asset History Log
-        const historyId = `hist-${id}-${Date.now()}`;
-        const historyLog = {
-          assetId: asset.assetId,
-          userId: selectedUserId,
-          assignmentId,
-          action: 'ASSIGN',
-          previousStatus: 'AVAILABLE',
-          newStatus: 'ASSIGNED',
-          performedBy: 'System Admin',
-          performedAt: new Date().toISOString(),
-          notes: notes || 'Assigned in user-wise bulk transaction',
-        };
-
-        operations.push({
-          type: 'SET',
-          collectionName: 'assetHistory',
-          docId: historyId,
-          data: historyLog,
-        });
-      });
-
-      // Commit transaction
-      await runFirestoreBatch(operations);
-
-      setConfirmModal(false);
-      navigate(`/user-profiles/${selectedUserId}`);
+      setSuccess('Asset assignment registered successfully! Handover receipt generated.');
+      setTimeout(() => {
+        setConfirmModal(false);
+        navigate('/user-profiles');
+      }, 2000);
     } catch (err) {
-      setError(`Failed to save assignment: ${err.message}`);
+      setError(apiError(err));
     } finally {
       setBusy(false);
     }
   };
+
+  // Set up canvas context styling on modal open
+  useEffect(() => {
+    if (confirmModal && canvasRef.current) {
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      ctx.strokeStyle = '#1e1b4b'; // dark navy signature ink
+      ctx.lineWidth = 2.5;
+      ctx.lineCap = 'round';
+    }
+  }, [confirmModal]);
 
   if (loading) return <div className="text-gray-500 text-center py-12">Loading Assignment Wizard…</div>;
 
   const selectedIds = getSelectedAssetIdsList();
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-12">
-      <PageHeader title="User-Wise Asset Assignment" subtitle="Assign multiple assets to an employee in one single transaction" />
+    <div className="max-w-4xl mx-auto space-y-6 pb-12 text-xs">
+      <PageHeader
+        title="User-Wise Asset Assignment"
+        subtitle="Provision computers, monitors, accessories, and network items to an employee in a single transaction flow"
+      />
 
-      {error && <div className="rounded bg-red-50 px-4 py-2.5 text-sm text-red-700 font-medium shadow-xs">{error}</div>}
+      {error && <div className="rounded-2xl bg-red-50 border border-red-150 px-4 py-3 text-red-700 font-semibold">{error}</div>}
 
       <form onSubmit={handlePreAssign} className="space-y-6">
+        
         {/* Section 1: User Details */}
-        <div className="card p-5 bg-white space-y-4">
-          <div className="border-b border-gray-100 pb-2">
-            <h3 className="font-bold text-gray-800 text-sm tracking-wide">Section 1: Select Employee</h3>
+        <div className="card p-5 bg-white border border-gray-150 space-y-4">
+          <div className="flex items-center gap-3 border-b border-gray-50 pb-3">
+            <span className="h-6 w-6 rounded-full bg-brand-100 text-brand-700 font-extrabold flex items-center justify-center">1</span>
+            <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider">Select Employee Recipient</h3>
           </div>
-          <div className="grid gap-4 md:grid-cols-3">
+          
+          <div className="max-w-md">
             <Field label="Choose Employee" required>
               <Select
                 value={selectedUserId}
                 onChange={handleUserChange}
                 placeholder="-- Select User --"
-                options={users.map(u => ({ value: u.id, label: `${u.employeeName} (${u.email})` }))}
+                options={users.map((u) => ({ value: u.id, label: `${u.name} (${u.email})` }))}
                 required
               />
             </Field>
           </div>
 
           {selectedUser && (
-            <div className="grid gap-3 p-4 bg-slate-50/50 rounded-2xl border border-gray-100 text-xs md:grid-cols-2">
+            <div className="grid gap-3 p-4 bg-slate-50 border border-slate-100 rounded-2xl md:grid-cols-3 text-2xs leading-relaxed font-bold text-gray-700">
               <div>
-                <dt className="text-gray-500 font-bold">Employee Name:</dt>
-                <dd className="font-semibold text-gray-800 text-sm mt-0.5">{selectedUser.employeeName}</dd>
+                <span className="text-gray-400 uppercase text-3xs font-extrabold block">Full Name</span>
+                <span className="text-gray-800">{selectedUser.name}</span>
               </div>
               <div>
-                <dt className="text-gray-500 font-bold">Employee ID:</dt>
-                <dd className="font-semibold text-gray-800 mt-0.5">{selectedUser.employeeId || '—'}</dd>
+                <span className="text-gray-400 uppercase text-3xs font-extrabold block">Email Address</span>
+                <span className="text-gray-800">{selectedUser.email}</span>
               </div>
               <div>
-                <dt className="text-gray-500 font-bold">Department:</dt>
-                <dd className="font-semibold text-gray-800 mt-0.5">{selectedUser.department}</dd>
-              </div>
-              <div>
-                <dt className="text-gray-500 font-bold">Company Name:</dt>
-                <dd className="font-semibold text-gray-800 mt-0.5">{selectedUser.companyName}</dd>
-              </div>
-              <div>
-                <dt className="text-gray-500 font-bold">Designation:</dt>
-                <dd className="font-semibold text-gray-800 mt-0.5">{selectedUser.designation || '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-gray-500 font-bold">Email Address:</dt>
-                <dd className="font-semibold text-gray-800 mt-0.5">{selectedUser.email}</dd>
-              </div>
-              <div>
-                <dt className="text-gray-500 font-bold">Mobile Number:</dt>
-                <dd className="font-semibold text-gray-800 mt-0.5">{selectedUser.mobileNumber || '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-gray-500 font-bold">Location:</dt>
-                <dd className="font-semibold text-gray-800 mt-0.5">{selectedUser.location || '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-gray-500 font-bold">Reporting Manager:</dt>
-                <dd className="font-semibold text-gray-800 mt-0.5">{selectedUser.reportingManager || '—'}</dd>
-              </div>
-              <div>
-                <dt className="text-gray-500 font-bold">Employment Status:</dt>
-                <dd className="font-semibold text-gray-800 mt-0.5 uppercase tracking-wide">{selectedUser.employmentStatus}</dd>
+                <span className="text-gray-400 uppercase text-3xs font-extrabold block">Job Title</span>
+                <span className="text-gray-800">{selectedUser.jobTitle || '—'}</span>
               </div>
             </div>
           )}
         </div>
 
-        {/* Section 2: Main Computer */}
-        <div className="card p-5 bg-white space-y-3">
-          <div className="border-b border-gray-100 pb-2">
-            <h3 className="font-bold text-gray-800 text-sm tracking-wide">Section 2: Primary Laptop or Desktop</h3>
+        {/* Section 2: Laptop/Desktop */}
+        <div className="card p-5 bg-white border border-gray-150 space-y-4">
+          <div className="flex items-center gap-3 border-b border-gray-50 pb-3">
+            <span className="h-6 w-6 rounded-full bg-brand-100 text-brand-700 font-extrabold flex items-center justify-center">2</span>
+            <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider">Primary Laptop or Desktop</h3>
           </div>
-          <div className="grid gap-3">
-            {getAvailableAssets(['Laptop', 'Desktop']).map((a) => (
-              <label key={a.id} className={`flex items-start p-3 border rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors ${
-                selectedAssets.mainComputer === a.id ? 'border-brand-600 bg-brand-50/10' : 'border-gray-150 bg-white'
-              }`}>
-                <input
-                  type="radio"
-                  name="mainComputer"
-                  checked={selectedAssets.mainComputer === a.id}
-                  onChange={() => toggleAssetSelect('mainComputer', a.id)}
-                  className="mt-1 mr-3 h-4 w-4 text-brand-600 focus:ring-brand-500"
-                />
-                <div className="text-xs space-y-0.5">
-                  <span className="font-bold text-gray-800">{a.manufacturer} {a.model} ({a.assetId})</span>
-                  <div className="text-gray-500">
-                    RAM: {a.ram || '—'} | HardDrive: {a.storage || '—'} | CPU: {a.cpu || '—'} | OS: {a.operatingSystem || '—'} | SN: {a.serialNumber}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {getAvailableAssets(['Laptop', 'Desktop', 'Workstation', 'Mini PC']).map((a) => (
+              <div
+                key={a.id}
+                onClick={() => toggleAssetSelect('mainComputer', a.id)}
+                className={`p-4 border rounded-2xl cursor-pointer hover:border-brand-400 hover:shadow-md transition-all flex justify-between items-start ${
+                  selectedAssets.mainComputer === a.id ? 'border-brand-600 bg-brand-50/10 ring-1 ring-brand-600' : 'border-gray-150 bg-white'
+                }`}
+              >
+                <div className="space-y-1">
+                  <div className="flex gap-2 items-center">
+                    <span className="font-extrabold text-gray-800">{a.manufacturer} {a.model}</span>
+                    <span className="px-1.5 py-0.5 rounded text-3xs font-extrabold bg-indigo-50 border border-indigo-150 text-indigo-700">{a.assetTag}</span>
+                  </div>
+                  <p className="text-3xs text-gray-400">SN: {a.serialNumber}</p>
+                  <div className="flex gap-2 flex-wrap pt-2">
+                    {a.ram && <span className="px-1.5 py-0.5 rounded text-3xs bg-slate-100 text-slate-600 font-bold">{a.ram} RAM</span>}
+                    {a.storage && <span className="px-1.5 py-0.5 rounded text-3xs bg-slate-100 text-slate-600 font-bold">{a.storage} Disk</span>}
+                    {a.cpu && <span className="px-1.5 py-0.5 rounded text-3xs bg-slate-100 text-slate-600 font-bold">{a.cpu} CPU</span>}
                   </div>
                 </div>
-              </label>
+                <input
+                  type="radio"
+                  checked={selectedAssets.mainComputer === a.id}
+                  onChange={() => {}}
+                  className="h-4 w-4 text-brand-600 focus:ring-brand-500 mt-1 cursor-pointer"
+                />
+              </div>
             ))}
-            {getAvailableAssets(['Laptop', 'Desktop']).length === 0 && (
-              <span className="text-gray-400 text-xs">No laptops or desktops available.</span>
+            {getAvailableAssets(['Laptop', 'Desktop', 'Workstation', 'Mini PC']).length === 0 && (
+              <div className="col-span-2 text-gray-400 italic py-2">No available laptops or desktop machines found in stock.</div>
             )}
           </div>
         </div>
 
-        {/* Section 3: Display Devices */}
-        <div className="card p-5 bg-white space-y-3">
-          <div className="border-b border-gray-100 pb-2">
-            <h3 className="font-bold text-gray-800 text-sm tracking-wide">Section 3: Display Monitors (Select Multiple)</h3>
+        {/* Section 3: Monitors */}
+        <div className="card p-5 bg-white border border-gray-150 space-y-4">
+          <div className="flex items-center gap-3 border-b border-gray-50 pb-3">
+            <span className="h-6 w-6 rounded-full bg-brand-100 text-brand-700 font-extrabold flex items-center justify-center">3</span>
+            <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider">Display Monitors (Select Multiple)</h3>
           </div>
-          <div className="grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             {getAvailableAssets(['Monitor']).map((a) => (
-              <label key={a.id} className={`flex items-start p-3 border rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors ${
-                selectedAssets.displays.includes(a.id) ? 'border-brand-600 bg-brand-50/10' : 'border-gray-150 bg-white'
-              }`}>
+              <div
+                key={a.id}
+                onClick={() => toggleAssetSelect('displays', a.id, true)}
+                className={`p-4 border rounded-2xl cursor-pointer hover:border-brand-400 hover:shadow-md transition-all flex justify-between items-start ${
+                  selectedAssets.displays.includes(a.id) ? 'border-brand-600 bg-brand-50/10 ring-1 ring-brand-600' : 'border-gray-150 bg-white'
+                }`}
+              >
+                <div className="space-y-1">
+                  <div className="flex gap-2 items-center">
+                    <span className="font-extrabold text-gray-800">{a.manufacturer} {a.model}</span>
+                    <span className="px-1.5 py-0.5 rounded text-3xs font-extrabold bg-indigo-50 border border-indigo-150 text-indigo-700">{a.assetTag}</span>
+                  </div>
+                  <p className="text-3xs text-gray-400">SN: {a.serialNumber}</p>
+                  <p className="text-3xs text-gray-500 font-semibold">{a.screenSize || 'No screen size specified'} • {a.connectionType || 'No connection spec'}</p>
+                </div>
                 <input
                   type="checkbox"
                   checked={selectedAssets.displays.includes(a.id)}
-                  onChange={() => toggleAssetSelect('displays', a.id, true)}
-                  className="mt-1 mr-3 h-4 w-4 rounded text-brand-600 focus:ring-brand-500"
+                  onChange={() => {}}
+                  className="h-4 w-4 rounded text-brand-600 focus:ring-brand-500 mt-1 cursor-pointer"
                 />
-                <div className="text-xs space-y-0.5">
-                  <span className="font-bold text-gray-800">{a.manufacturer} {a.model} ({a.assetId})</span>
-                  <div className="text-gray-500">
-                    Screen Size: {a.screenSize || '—'} | Connection: {a.connectionType || '—'} | SN: {a.serialNumber}
-                  </div>
-                </div>
-              </label>
+              </div>
             ))}
             {getAvailableAssets(['Monitor']).length === 0 && (
-              <span className="text-gray-400 text-xs">No monitors available.</span>
+              <div className="col-span-2 text-gray-400 italic py-2">No available monitors found in stock.</div>
             )}
           </div>
         </div>
 
-        {/* Section 4: Input Devices */}
-        <div className="card p-5 bg-white space-y-3">
-          <div className="border-b border-gray-100 pb-2">
-            <h3 className="font-bold text-gray-800 text-sm tracking-wide">Section 4: Keyboard and Mouse</h3>
+        {/* Section 4: Keyboards and Mice */}
+        <div className="card p-5 bg-white border border-gray-150 space-y-4">
+          <div className="flex items-center gap-3 border-b border-gray-50 pb-3">
+            <span className="h-6 w-6 rounded-full bg-brand-100 text-brand-700 font-extrabold flex items-center justify-center">4</span>
+            <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider">Keyboard and Mouse</h3>
           </div>
-          <div className="grid gap-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             {getAvailableAssets(['Keyboard', 'Mouse']).map((a) => (
-              <label key={a.id} className={`flex items-start p-3 border rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors ${
-                selectedAssets.inputs === a.id ? 'border-brand-600 bg-brand-50/10' : 'border-gray-150 bg-white'
-              }`}>
+              <div
+                key={a.id}
+                onClick={() => toggleAssetSelect('inputs', a.id)}
+                className={`p-4 border rounded-2xl cursor-pointer hover:border-brand-400 hover:shadow-md transition-all flex justify-between items-start ${
+                  selectedAssets.inputs === a.id ? 'border-brand-600 bg-brand-50/10 ring-1 ring-brand-600' : 'border-gray-150 bg-white'
+                }`}
+              >
+                <div className="space-y-1">
+                  <div className="flex gap-2 items-center">
+                    <span className="font-extrabold text-gray-800">{a.category?.name}: {a.manufacturer} {a.model}</span>
+                    <span className="px-1.5 py-0.5 rounded text-3xs font-extrabold bg-indigo-50 border border-indigo-150 text-indigo-700">{a.assetTag}</span>
+                  </div>
+                  <p className="text-3xs text-gray-400">SN: {a.serialNumber} • Condition: {a.condition || 'Good'}</p>
+                </div>
                 <input
                   type="radio"
-                  name="inputs"
                   checked={selectedAssets.inputs === a.id}
-                  onChange={() => toggleAssetSelect('inputs', a.id)}
-                  className="mt-1 mr-3 h-4 w-4 text-brand-600 focus:ring-brand-500"
+                  onChange={() => {}}
+                  className="h-4 w-4 text-brand-600 focus:ring-brand-500 mt-1 cursor-pointer"
                 />
-                <div className="text-xs space-y-0.5">
-                  <span className="font-bold text-gray-800">{a.category}: {a.manufacturer} {a.model} ({a.assetId})</span>
-                  <div className="text-gray-500">SN: {a.serialNumber} | Condition: {a.condition}</div>
-                </div>
-              </label>
+              </div>
             ))}
             {getAvailableAssets(['Keyboard', 'Mouse']).length === 0 && (
-              <span className="text-gray-400 text-xs">No keyboard or mouse items available.</span>
+              <div className="col-span-2 text-gray-400 italic py-2">No keyboards or mice available in stock.</div>
             )}
           </div>
         </div>
 
-        {/* Section 5: Audio & Video Devices */}
-        <div className="card p-5 bg-white space-y-3">
-          <div className="border-b border-gray-100 pb-2">
-            <h3 className="font-bold text-gray-800 text-sm tracking-wide">Section 5: Audio and Video Devices</h3>
-          </div>
-          <div className="grid gap-3">
-            {getAvailableAssets(['Headphone']).map((a) => (
-              <label key={a.id} className={`flex items-start p-3 border rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors ${
-                selectedAssets.audioVideo === a.id ? 'border-brand-600 bg-brand-50/10' : 'border-gray-150 bg-white'
-              }`}>
-                <input
-                  type="radio"
-                  name="audioVideo"
-                  checked={selectedAssets.audioVideo === a.id}
-                  onChange={() => toggleAssetSelect('audioVideo', a.id)}
-                  className="mt-1 mr-3 h-4 w-4 text-brand-600 focus:ring-brand-500"
-                />
-                <div className="text-xs space-y-0.5">
-                  <span className="font-bold text-gray-800">{a.manufacturer} {a.model} ({a.assetId})</span>
-                  <div className="text-gray-500">SN: {a.serialNumber} | Condition: {a.condition}</div>
-                </div>
-              </label>
-            ))}
-            {getAvailableAssets(['Headphone']).length === 0 && (
-              <span className="text-gray-400 text-xs">No audio/video items available.</span>
-            )}
-          </div>
-        </div>
-
-        {/* Section 6: Network and Connectivity */}
-        <div className="card p-5 bg-white space-y-3">
-          <div className="border-b border-gray-100 pb-2">
-            <h3 className="font-bold text-gray-800 text-sm tracking-wide">Section 6: Network and Connectivity Devices</h3>
-          </div>
-          <div className="grid gap-3">
-            {getAvailableAssets(['Wi-Fi Adapter', 'Bluetooth Adapter']).map((a) => (
-              <label key={a.id} className={`flex items-start p-3 border rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors ${
-                selectedAssets.network === a.id ? 'border-brand-600 bg-brand-50/10' : 'border-gray-150 bg-white'
-              }`}>
-                <input
-                  type="radio"
-                  name="network"
-                  checked={selectedAssets.network === a.id}
-                  onChange={() => toggleAssetSelect('network', a.id)}
-                  className="mt-1 mr-3 h-4 w-4 text-brand-600 focus:ring-brand-500"
-                />
-                <div className="text-xs space-y-0.5">
-                  <span className="font-bold text-gray-800">{a.category}: {a.manufacturer} {a.model} ({a.assetId})</span>
-                  <div className="text-gray-500">MAC: {a.macAddress || '—'} | SN: {a.serialNumber}</div>
-                </div>
-              </label>
-            ))}
-            {getAvailableAssets(['Wi-Fi Adapter', 'Bluetooth Adapter']).length === 0 && (
-              <span className="text-gray-400 text-xs">No wireless or network adapters available.</span>
-            )}
-          </div>
-        </div>
-
-        {/* Section 7: Mobile Devices */}
-        <div className="card p-5 bg-white space-y-3">
-          <div className="border-b border-gray-100 pb-2">
-            <h3 className="font-bold text-gray-800 text-sm tracking-wide">Section 7: Mobile Phones & SIMs</h3>
-          </div>
-          <div className="grid gap-3">
-            {getAvailableAssets(['Mobile Phone']).map((a) => (
-              <label key={a.id} className={`flex items-start p-3 border rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors ${
-                selectedAssets.mobile === a.id ? 'border-brand-600 bg-brand-50/10' : 'border-gray-150 bg-white'
-              }`}>
-                <input
-                  type="radio"
-                  name="mobile"
-                  checked={selectedAssets.mobile === a.id}
-                  onChange={() => toggleAssetSelect('mobile', a.id)}
-                  className="mt-1 mr-3 h-4 w-4 text-brand-600 focus:ring-brand-500"
-                />
-                <div className="text-xs space-y-0.5">
-                  <span className="font-bold text-gray-800">{a.manufacturer} {a.model} ({a.assetId})</span>
-                  <div className="text-gray-500">
-                    Phone No: {a.mobileNumber || '—'} | Provider: {a.networkProvider || '—'} | IMEI: {a.imeiNumber || '—'}
-                  </div>
-                </div>
-              </label>
-            ))}
-            {getAvailableAssets(['Mobile Phone']).length === 0 && (
-              <span className="text-gray-400 text-xs">No mobile phones available.</span>
-            )}
-          </div>
-        </div>
-
-        {/* Section 8: Chargers and Power Devices */}
-        <div className="card p-5 bg-white space-y-3">
-          <div className="border-b border-gray-100 pb-2">
-            <h3 className="font-bold text-gray-800 text-sm tracking-wide">Section 8: Power Adapters & Chargers (Select Multiple)</h3>
-          </div>
-          <div className="grid gap-3">
-            {getAvailableAssets(['Laptop Charger', 'Mobile Charger']).map((a) => (
-              <label key={a.id} className={`flex items-start p-3 border rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors ${
-                selectedAssets.chargers.includes(a.id) ? 'border-brand-600 bg-brand-50/10' : 'border-gray-150 bg-white'
-              }`}>
-                <input
-                  type="checkbox"
-                  checked={selectedAssets.chargers.includes(a.id)}
-                  onChange={() => toggleAssetSelect('chargers', a.id, true)}
-                  className="mt-1 mr-3 h-4 w-4 rounded text-brand-600 focus:ring-brand-500"
-                />
-                <div className="text-xs space-y-0.5">
-                  <span className="font-bold text-gray-800">{a.category}: {a.manufacturer} {a.model} ({a.assetId})</span>
-                  <div className="text-gray-500">
-                    Wattage: {a.wattage || '—'} | Charger Type: {a.chargerType || '—'} | SN: {a.serialNumber}
-                  </div>
-                </div>
-              </label>
-            ))}
-            {getAvailableAssets(['Laptop Charger', 'Mobile Charger']).length === 0 && (
-              <span className="text-gray-400 text-xs">No chargers or power units available.</span>
-            )}
-          </div>
-        </div>
-
-        {/* Section 9: Printing Devices */}
-        <div className="card p-5 bg-white space-y-3">
-          <div className="border-b border-gray-100 pb-2">
-            <h3 className="font-bold text-gray-800 text-sm tracking-wide">Section 9: Printers & Scanners</h3>
-          </div>
-          <div className="grid gap-3">
-            {getAvailableAssets(['Printer']).map((a) => (
-              <label key={a.id} className={`flex items-start p-3 border rounded-2xl cursor-pointer hover:bg-slate-50 transition-colors ${
-                selectedAssets.printers === a.id ? 'border-brand-600 bg-brand-50/10' : 'border-gray-150 bg-white'
-              }`}>
-                <input
-                  type="radio"
-                  name="printers"
-                  checked={selectedAssets.printers === a.id}
-                  onChange={() => toggleAssetSelect('printers', a.id)}
-                  className="mt-1 mr-3 h-4 w-4 text-brand-600 focus:ring-brand-500"
-                />
-                <div className="text-xs space-y-0.5">
-                  <span className="font-bold text-gray-800">{a.manufacturer} {a.model} ({a.assetId})</span>
-                  <div className="text-gray-500">
-                    IP: {a.ipAddress || '—'} | connection: {a.connectionType || '—'} | SN: {a.serialNumber}
-                  </div>
-                </div>
-              </label>
-            ))}
-            {getAvailableAssets(['Printer']).length === 0 && (
-              <span className="text-gray-400 text-xs">No printer hardware available.</span>
-            )}
-          </div>
-        </div>
-
-        {/* Notes */}
-        <div className="card p-5 bg-white">
-          <Field label="Assignment Notes / Remarks">
+        {/* Section 5: Remarks */}
+        <div className="card p-5 bg-white border border-gray-150">
+          <Field label="Assignment Handover Notes">
             <textarea
               className="input text-xs"
               rows={2}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Provide reason or comments for this assignment transaction..."
+              placeholder="e.g. Assigned Dell desktop and monitor setup to new developer joiner onboarding kit."
             />
           </Field>
         </div>
 
-        {/* Form Controls */}
+        {/* Action Controls */}
         <div className="flex justify-end gap-3">
-          <button type="button" className="btn-secondary" onClick={() => navigate('/user-profiles')}>
-            Cancel
-          </button>
-          <button className="btn-primary px-6">
-            Assign All Assets
-          </button>
+          <button type="button" className="btn-secondary" onClick={() => navigate('/user-profiles')}>Cancel</button>
+          <button className="btn-primary px-6">Assign All Assets</button>
         </div>
       </form>
 
-      {/* Step 5: Confirmation Modal */}
-      <Modal open={confirmModal} title="Confirm Asset Assignment" onClose={() => setConfirmModal(false)}>
-        {error && <div className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
+      {/* CONFIRMATION & DIGITAL SIGNATURE MODAL */}
+      <Modal open={confirmModal} title="Authorized Asset Assignment" onClose={() => setConfirmModal(false)}>
+        {error && <div className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700 font-semibold">{error}</div>}
+        {success && <div className="mb-4 rounded bg-emerald-50 px-3 py-2 text-sm text-emerald-700 font-semibold">{success}</div>}
+
         <div className="space-y-4">
-          <div className="bg-slate-50 p-4 rounded-2xl border border-gray-100 space-y-1">
-            <span className="text-2xs font-bold text-gray-400 uppercase tracking-wide">Assigning to User</span>
-            <h4 className="font-extrabold text-gray-800 text-base">{selectedUser?.employeeName}</h4>
-            <p className="text-xs text-gray-500">{selectedUser?.email} | Department: {selectedUser?.department}</p>
+          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+            <span className="text-3xs uppercase font-extrabold text-gray-400">Assignee Employee</span>
+            <h4 className="font-extrabold text-gray-800 mt-1">{selectedUser?.name}</h4>
+            <p className="text-3xs text-gray-400 mt-0.5">{selectedUser?.email}</p>
           </div>
 
-          <div className="space-y-2">
-            <span className="text-2xs font-bold text-gray-400 uppercase tracking-wider block">Selected Hardware ({selectedIds.length})</span>
-            <div className="max-h-48 overflow-y-auto border border-gray-100 rounded-xl divide-y divide-gray-100 bg-white">
+          <div className="space-y-1">
+            <span className="text-3xs uppercase font-extrabold text-gray-400 block">Selected Items ({selectedIds.length})</span>
+            <div className="max-h-36 overflow-y-auto border border-gray-100 rounded-xl bg-white divide-y divide-gray-100">
               {selectedIds.map((id) => {
-                const a = assets.find(item => String(item.id) === String(id));
+                const a = assets.find((item) => String(item.id) === String(id));
                 return (
-                  <div key={id} className="p-2.5 text-xs flex justify-between items-center">
-                    <div>
-                      <span className="font-bold text-gray-800">{a?.manufacturer} {a?.model}</span>
-                      <p className="text-2xs text-gray-400">{a?.category} | SN: {a?.serialNumber}</p>
-                    </div>
-                    <span className="rounded bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-2xs font-bold text-indigo-700">
-                      {a?.assetId}
-                    </span>
+                  <div key={id} className="p-2 flex justify-between items-center text-3xs font-bold text-gray-700">
+                    <span>{a?.manufacturer} {a?.model} ({a?.category?.name})</span>
+                    <span className="text-indigo-700">{a?.assetTag}</span>
                   </div>
                 );
               })}
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-gray-150 pt-4 mt-6">
-            <button type="button" className="btn-secondary" onClick={() => setConfirmModal(false)} disabled={busy}>
-              Go Back
-            </button>
-            <button onClick={executeAssignment} className="btn-primary" disabled={busy}>
-              {busy ? 'Processing…' : 'Confirm Assignment'}
+          {/* Canvas Signature Pad */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
+              <span className="text-3xs uppercase font-extrabold text-gray-400">Receiver Handover Signature</span>
+              <button type="button" onClick={clearCanvas} className="text-indigo-650 hover:underline text-3xs font-extrabold">
+                Clear Pad
+              </button>
+            </div>
+            <div className="border border-slate-200 bg-slate-50 rounded-2xl overflow-hidden flex justify-center">
+              <canvas
+                ref={canvasRef}
+                width={360}
+                height={120}
+                onMouseDown={startDrawing}
+                onMouseMove={draw}
+                onMouseUp={stopDrawing}
+                onMouseLeave={stopDrawing}
+                className="cursor-crosshair bg-white"
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 border-t border-gray-100 pt-4 mt-6">
+            <button type="button" className="btn-secondary" onClick={() => setConfirmModal(false)} disabled={busy}>Go Back</button>
+            <button onClick={executeAssignment} className="btn-primary px-5" disabled={busy || !hasSignature}>
+              {busy ? 'Processing Handover…' : 'Sign & Complete'}
             </button>
           </div>
         </div>
