@@ -37,9 +37,22 @@ async function list(req, res) {
   res.json({ items, total, page, pageSize });
 }
 
+async function findAssetByIdOrTag(idOrTag) {
+  const isNum = /^\d+$/.test(idOrTag);
+  if (isNum) {
+    const asset = await prisma.asset.findUnique({ where: { id: Number(idOrTag) } });
+    if (asset) return asset;
+  }
+  return await prisma.asset.findFirst({
+    where: { OR: [{ assetTag: idOrTag }, { serialNumber: idOrTag }] }
+  });
+}
+
 async function get(req, res) {
-  const asset = await prisma.asset.findUnique({
-    where: { id: Number(req.params.id) },
+  const idOrTag = req.params.id;
+  const isNum = /^\d+$/.test(idOrTag);
+  const asset = await prisma.asset.findFirst({
+    where: isNum ? { id: Number(idOrTag) } : { OR: [{ assetTag: idOrTag }, { serialNumber: idOrTag }] },
     include: {
       ...include,
       assignments: { include: { user: { select: { id: true, name: true } }, performedBy: { select: { id: true, name: true } } }, orderBy: { createdAt: 'desc' } },
@@ -59,7 +72,7 @@ function parseBody(body, files) {
     categoryId: Number(body.categoryId),
     vendorId: body.vendorId ? Number(body.vendorId) : null,
     purchaseDate: dateOrNull(body.purchaseDate),
-    purchasePrice: body.purchasePrice ? body.purchasePrice : null,
+    purchasePrice: body.purchasePrice ? Number(body.purchasePrice) : null,
     warrantyStart: dateOrNull(body.warrantyStart),
     warrantyEnd: dateOrNull(body.warrantyEnd),
     locationId: body.locationId ? Number(body.locationId) : null,
@@ -83,35 +96,33 @@ async function create(req, res) {
 }
 
 async function update(req, res) {
-  const id = Number(req.params.id);
-  const before = await prisma.asset.findUnique({ where: { id } });
-  if (!before) throw new HttpError(404, 'Asset not found');
+  const asset = await findAssetByIdOrTag(req.params.id);
+  if (!asset) throw new HttpError(404, 'Asset not found');
   const data = parseBody(req.body, req.files);
   delete data.categoryId; // category (and therefore tag) is immutable after creation
-  const asset = await prisma.asset.update({ where: { id }, data, include });
-  await logAudit({ userId: req.user.id, action: 'UPDATE', entity: 'Asset', entityId: id, before, after: asset, ip: req.ip });
-  res.json(asset);
+  const updated = await prisma.asset.update({ where: { id: asset.id }, data, include });
+  await logAudit({ userId: req.user.id, action: 'UPDATE', entity: 'Asset', entityId: asset.id, before: asset, after: updated, ip: req.ip });
+  res.json(updated);
 }
 
 async function remove(req, res) {
-  const id = Number(req.params.id);
-  const asset = await prisma.asset.findUnique({ where: { id } });
+  const asset = await findAssetByIdOrTag(req.params.id);
   if (!asset) throw new HttpError(404, 'Asset not found');
   if (asset.status === 'ASSIGNED') throw new HttpError(400, 'Return the asset before deleting it');
   // Soft delete: mark disposed rather than removing history.
-  const updated = await prisma.asset.update({ where: { id }, data: { status: 'DISPOSED' } });
-  await logAudit({ userId: req.user.id, action: 'DISPOSE', entity: 'Asset', entityId: id, before: asset, after: updated, ip: req.ip });
+  const updated = await prisma.asset.update({ where: { id: asset.id }, data: { status: 'DISPOSED' } });
+  await logAudit({ userId: req.user.id, action: 'DISPOSE', entity: 'Asset', entityId: asset.id, before: asset, after: updated, ip: req.ip });
   res.json(updated);
 }
 
 async function qrcode(req, res) {
-  const asset = await prisma.asset.findUnique({ where: { id: Number(req.params.id) } });
+  const asset = await findAssetByIdOrTag(req.params.id);
   if (!asset) throw new HttpError(404, 'Asset not found');
   res.type('png').send(await assetQrPng(asset));
 }
 
 async function barcode(req, res) {
-  const asset = await prisma.asset.findUnique({ where: { id: Number(req.params.id) } });
+  const asset = await findAssetByIdOrTag(req.params.id);
   if (!asset) throw new HttpError(404, 'Asset not found');
   res.type('png').send(await assetBarcodePng(asset));
 }
