@@ -170,6 +170,34 @@ async function create(req, res) {
     // 5. Evaluate no-code automation rules for triggers (TICKET_CREATED)
     await evaluateAutomationRules('TICKET_CREATED', ticket);
 
+    // Notify the IT Helpdesk Team via Email
+    try {
+      const config = require('../config');
+      const { sendMail, layout } = require('../services/email');
+      const category = ticket.categoryId ? await prisma.category.findUnique({ where: { id: ticket.categoryId } }) : null;
+      const categoryName = category ? category.name : 'General IT Helpdesk';
+      const mailBody = `
+        <p>A new IT Service ticket has been generated on the Nationwide Paper Ltd Portal:</p>
+        <table style="width:100%; border-collapse: collapse; margin-top: 10px; font-size:13px;">
+          <tr><td style="padding:5px 0; font-weight:bold; width:120px; border-bottom:1px solid #f3f4f6;">Ticket No:</td><td style="padding:5px 0; border-bottom:1px solid #f3f4f6; color:#1e3a5f; font-weight:bold;">${ticket.ticketNo}</td></tr>
+          <tr><td style="padding:5px 0; font-weight:bold; border-bottom:1px solid #f3f4f6;">Type:</td><td style="padding:5px 0; border-bottom:1px solid #f3f4f6;">${ticket.type}</td></tr>
+          <tr><td style="padding:5px 0; font-weight:bold; border-bottom:1px solid #f3f4f6;">Priority:</td><td style="padding:5px 0; border-bottom:1px solid #f3f4f6;">${ticket.priority}</td></tr>
+          <tr><td style="padding:5px 0; font-weight:bold; border-bottom:1px solid #f3f4f6;">Category:</td><td style="padding:5px 0; border-bottom:1px solid #f3f4f6;">${categoryName}</td></tr>
+          <tr><td style="padding:5px 0; font-weight:bold; border-bottom:1px solid #f3f4f6;">Summary:</td><td style="padding:5px 0; border-bottom:1px solid #f3f4f6;">${ticket.summary}</td></tr>
+          <tr><td style="padding:5px 0; font-weight:bold; border-bottom:1px solid #f3f4f6;">Description:</td><td style="padding:5px 0; border-bottom:1px solid #f3f4f6; color:#4b5563;">${ticket.description}</td></tr>
+          <tr><td style="padding:5px 0; font-weight:bold; border-bottom:1px solid #f3f4f6;">Requester:</td><td style="padding:5px 0; border-bottom:1px solid #f3f4f6;">${req.user.name} (${req.user.email})</td></tr>
+        </table>
+        <p style="margin-top: 20px;"><a href="${config.appUrl || 'http://localhost:5173'}/tickets/${ticket.ticketNo}" style="background:#1e3a5f; color:#fff; padding:10px 20px; text-decoration:none; border-radius:6px; font-weight:bold; display:inline-block;">Open Ticket in Portal</a></p>
+      `;
+      await sendMail({
+        to: 'it@nationwide-paper.com',
+        subject: `[${ticket.ticketNo}] New IT Ticket Created: ${ticket.summary}`,
+        html: layout(`New Ticket Opened`, mailBody)
+      });
+    } catch (mailErr) {
+      console.error('Failed to send email alert:', mailErr.message);
+    }
+
     res.status(201).json(ticket);
   } catch (error) {
     res.status(500).json({ error: 'Failed to create ticket: ' + error.message });
