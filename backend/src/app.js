@@ -36,6 +36,7 @@ app.use('/api/automation', require('./routes/automation.routes'));
 app.use('/api/approvals', require('./routes/approval.routes'));
 app.use('/api/kb', require('./routes/kb.routes'));
 app.use('/api/workflow', require('./routes/onboarding.routes'));
+app.use('/api/maintenance', require('./routes/maintenance.routes'));
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
 app.use(errorHandler);

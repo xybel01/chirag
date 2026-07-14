@@ -1,4 +1,4 @@
-# Secure ITAM Windows Inventory Agent Script
+# Secure ITAM Windows Discovery & Inventory Agent Script
 # File: ITAssetInventoryAgent.ps1
 
 $LogDir = "C:\ProgramData\CompanyIT\Logs"
@@ -15,7 +15,7 @@ function Write-Log {
     Write-Output $LogLine
 }
 
-Write-Log "Starting ITAM Inventory Scan..."
+Write-Log "Starting ITAM Discovery Scan..."
 
 # Portal API Configuration
 $ApiUrl = "http://localhost:5000/api/agent/submit" # Update to production URL as needed
@@ -29,7 +29,7 @@ try {
     $OSInfo = Get-CimInstance Win32_OperatingSystem
     $CPUInfo = Get-CimInstance Win32_Processor | Select-Object -First 1
 
-    # RAM aggregation
+    # RAM slots details
     $RAMModules = Get-CimInstance Win32_PhysicalMemory
     $RAMTotalBytes = ($RAMModules | Measure-Object -Property Capacity -Sum).Sum
     $RAMTotalGB = "$([Math]::Round($RAMTotalBytes / 1GB)) GB"
@@ -51,7 +51,35 @@ try {
     $IPAddress = $NetConfig.IPAddress[0]
     $MACAddress = $NetConfig.MACAddress
 
-    # 3. Gather Installed Software Catalog from Uninstall Registry
+    # 3. Gather BitLocker Status
+    Write-Log "Checking BitLocker status..."
+    $BitLocker = "Unknown"
+    if (Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue) {
+        $BLVol = Get-BitLockerVolume -MountPoint "C:" -ErrorAction SilentlyContinue
+        $BitLocker = $BLVol.ProtectionStatus.ToString()
+    }
+
+    # 4. Gather Windows Updates & Defender
+    Write-Log "Checking security & updates..."
+    $Defender = "Enabled"
+    if (Get-Service -Name "Windefend" -ErrorAction SilentlyContinue) {
+        $Defender = (Get-Service -Name "Windefend").Status.ToString()
+    }
+
+    $LastUpdate = "Recent"
+    if (Get-HotFix -ErrorAction SilentlyContinue) {
+        $LastUpdate = (Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 1).InstalledOn.ToString("yyyy-MM-dd")
+    }
+
+    # 5. Battery Health
+    Write-Log "Checking battery status..."
+    $BatteryPct = 100
+    $BatteryHealth = Get-CimInstance -ClassName Win32_Battery -ErrorAction SilentlyContinue
+    if ($BatteryHealth) {
+        $BatteryPct = $BatteryHealth.EstimatedChargeRemaining
+    }
+
+    # 6. Gather Installed Software Catalog from Uninstall Registry
     Write-Log "Retrieving installed applications list..."
     $RegPaths = @(
         "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*",
@@ -64,25 +92,35 @@ try {
 
     Write-Log "Found $($InstalledApps.Count) installed applications."
 
-    # 4. Construct Inventory JSON Payload
+    # 7. Construct Inventory JSON Payload
     $Payload = @{
-        registrationToken = $RegistrationToken
-        hostName          = $CS.Name
-        manufacturer      = $CS.Manufacturer
-        model             = $CS.Model
-        serialNumber      = $Bios.SerialNumber
-        cpu               = $CPUInfo.Name
-        ram               = $RAMTotalGB
-        storage           = $DiskSizeGB
-        operatingSystem   = $OSInfo.Caption
-        macAddress        = $MACAddress
-        ipAddress         = $IPAddress
-        installedSoftware = $InstalledApps
+        registrationToken  = $RegistrationToken
+        hostName           = $CS.Name
+        computerName       = $CS.Name
+        domainName         = $CS.Domain
+        manufacturer       = $CS.Manufacturer
+        model              = $CS.Model
+        serialNumber       = $Bios.SerialNumber
+        cpu                = $CPUInfo.Name
+        ram                = $RAMTotalGB
+        storage            = $DiskSizeGB
+        operatingSystem    = $OSInfo.Caption
+        windowsEdition     = $OSInfo.Caption
+        windowsVersion     = $OSInfo.Version
+        buildNumber        = $OSInfo.BuildNumber
+        macAddress         = $MACAddress
+        ipAddress          = $IPAddress
+        bitLockerStatus    = $BitLocker
+        defenderStatus     = $Defender
+        batteryHealthPct   = $BatteryPct
+        lastWindowsUpdate  = $LastUpdate
+        loggedInUser       = $CS.UserName
+        installedSoftware  = $InstalledApps
     }
 
     $JsonPayload = $Payload | ConvertTo-Json -Depth 5
 
-    # 5. POST securely to Portal API
+    # 8. POST securely to Portal API
     Write-Log "Posting inventory payload to Portal API ($ApiUrl)..."
     $Headers = @{
         "Content-Type" = "application/json"

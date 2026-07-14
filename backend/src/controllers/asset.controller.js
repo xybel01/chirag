@@ -4,7 +4,14 @@ const paginate = require('../utils/pagination');
 const { logAudit } = require('../services/audit');
 const { assetQrPng, assetBarcodePng } = require('../services/codes');
 
-const include = { category: true, vendor: true, location: true, department: true, assignedTo: { select: { id: true, name: true, email: true } } };
+const include = {
+  category: true,
+  vendor: true,
+  location: true,
+  department: true,
+  assignedTo: { select: { id: true, name: true, email: true } },
+  maintenances: { orderBy: { maintenanceDate: 'desc' } }
+};
 
 // Asset tag format: NP-<CATEGORY CODE>-<zero padded sequence>, e.g. NP-LAP-0007
 async function nextAssetTag(categoryId) {
@@ -17,6 +24,7 @@ async function nextAssetTag(categoryId) {
 async function list(req, res) {
   const { skip, take, page, pageSize } = paginate(req.query);
   const q = req.query;
+  
   const where = {
     ...(q.search ? { OR: [
       { assetTag: { contains: q.search, mode: 'insensitive' } },
@@ -30,6 +38,7 @@ async function list(req, res) {
     ...(q.locationId ? { locationId: Number(q.locationId) } : {}),
     ...(q.assignedToId ? { assignedToId: Number(q.assignedToId) } : {}),
   };
+
   const [items, total] = await Promise.all([
     prisma.asset.findMany({ where, include, skip, take, orderBy: { createdAt: 'desc' } }),
     prisma.asset.count({ where }),
@@ -82,6 +91,55 @@ function parseBody(body, files) {
     ram: body.ram || null,
     storage: body.storage || null,
     cpu: body.cpu || null,
+    
+    // Expanded CMDB fields
+    gst: body.gst ? Number(body.gst) : null,
+    insuranceDetails: body.insuranceDetails || null,
+    insuranceExpiry: dateOrNull(body.insuranceExpiry),
+    floor: body.floor || null,
+    cabin: body.cabin || null,
+    rackNumber: body.rackNumber || null,
+    costCentre: body.costCentre || null,
+    ownerDepartment: body.ownerDepartment || null,
+    nextMaintenance: dateOrNull(body.nextMaintenance),
+    lastMaintenance: dateOrNull(body.lastMaintenance),
+    scrapDate: dateOrNull(body.scrapDate),
+    disposalMethod: body.disposalMethod || null,
+
+    // Laptops/Desktops specific configurations
+    gpu: body.gpu || null,
+    gpuMemory: body.gpuMemory || null,
+    windowsEdition: body.windowsEdition || null,
+    windowsVersion: body.windowsVersion || null,
+    buildNumber: body.buildNumber || null,
+    activationStatus: body.activationStatus || null,
+    computerName: body.computerName || null,
+    domainName: body.domainName || null,
+    wifiMac: body.wifiMac || null,
+    bluetoothMac: body.bluetoothMac || null,
+    bitLockerStatus: body.bitLockerStatus || null,
+    tpmVersion: body.tpmVersion || null,
+    secureBootStatus: body.secureBootStatus || null,
+    defenderStatus: body.defenderStatus || null,
+    esetStatus: body.esetStatus || null,
+    firewallStatus: body.firewallStatus || null,
+    recoveryKey: body.recoveryKey || null,
+
+    // Printer specific
+    drumModel: body.drumModel || null,
+    currentPageCount: body.currentPageCount ? Number(body.currentPageCount) : 0,
+
+    // Mobile specific
+    imeiNumber2: body.imeiNumber2 || null,
+    carrier: body.carrier || null,
+    mdmStatus: body.mdmStatus || null,
+
+    // Network specific
+    wanIp: body.wanIp || null,
+    portsCount: body.portsCount ? Number(body.portsCount) : null,
+    ispName: body.ispName || null,
+    firmwareVersion: body.firmwareVersion || null,
+
     ...(files?.invoice?.[0] ? { invoiceFile: files.invoice[0].filename } : {}),
     ...(files?.warrantyDoc?.[0] ? { warrantyFile: files.warrantyDoc[0].filename } : {}),
   };

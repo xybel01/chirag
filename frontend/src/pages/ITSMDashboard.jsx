@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { getCollectionItems } from '../utils/firebase.js';
 import PageHeader from '../components/PageHeader.jsx';
 import StatCard from '../components/StatCard.jsx';
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
+import api from '../api/client';
 
 export default function ITSMDashboard() {
   const [loading, setLoading] = useState(true);
@@ -24,52 +24,24 @@ export default function ITSMDashboard() {
   useEffect(() => {
     async function loadStats() {
       try {
-        const users = await getCollectionItems('users');
-        const assets = await getCollectionItems('assets');
-        const assignments = await getCollectionItems('assignments');
-
-        // Total Assigned Assets
-        const assignedAssets = assets.filter((a) => a.status === 'ASSIGNED');
-        const availableAssets = assets.filter((a) => a.status === 'AVAILABLE');
-        const damagedAssets = assets.filter((a) => a.status === 'DAMAGED');
-        const lostAssets = assets.filter((a) => a.status === 'LOST');
-        const returnedAssets = assets.filter((a) => a.status === 'RETURNED' || a.status === 'RETIRED');
-
-        // Users mapping
-        const assignedUserIds = new Set(assignedAssets.map((a) => a.assignedUserId).filter(Boolean));
-        const totalUsers = users.length;
-        const usersWithAssets = assignedUserIds.size;
-        const usersWithoutAssets = Math.max(0, totalUsers - usersWithAssets);
-
-        // Pending Clearance & Acknowledgment
-        const pendingAck = assignments.filter((as) => as.acknowledgementStatus === 'PENDING').length;
-        
-        // Employees pending asset clearance: users who are flagged as inactive or leaving but still hold assets,
-        // or simply active users holding assets (let's count active users with assigned assets)
-        const pendingClearance = users.filter((u) => u.employmentStatus === 'ACTIVE' && assignedUserIds.has(u.id)).length;
+        const res = await api.get('/dashboard');
+        const data = res.data;
 
         setStats({
-          totalUsers,
-          usersWithAssets,
-          usersWithoutAssets,
-          totalAssignedAssets: assignedAssets.length,
-          availableAssets: availableAssets.length,
-          returnedAssets: returnedAssets.length,
-          damagedAssets: damagedAssets.length,
-          lostAssets: lostAssets.length,
-          pendingAck,
-          pendingClearance,
-        });
-
-        // Device type breakdown
-        const typeCounts = {};
-        assets.forEach((a) => {
-          const type = a.deviceType || a.category || 'Other';
-          typeCounts[type] = (typeCounts[type] || 0) + 1;
+          totalUsers: data.totals.users,
+          usersWithAssets: data.totals.assigned,
+          usersWithoutAssets: Math.max(0, data.totals.users - data.totals.assigned),
+          totalAssignedAssets: data.totals.assigned,
+          availableAssets: data.totals.available,
+          returnedAssets: data.totals.disposed,
+          damagedAssets: data.totals.faulty,
+          lostAssets: data.totals.lost,
+          pendingAck: data.totals.openRepairs,
+          pendingClearance: data.totals.lowStock,
         });
 
         setDeviceBreakdown(
-          Object.entries(typeCounts).map(([name, value]) => ({ name, value }))
+          (data.byCategory || []).map((c) => ({ name: c.name, value: c.count }))
         );
       } catch (err) {
         console.error('Error compiling dashboard stats:', err);

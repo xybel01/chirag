@@ -163,43 +163,105 @@ model Category {
 }
 
 model Asset {
-  id            Int            @id @default(autoincrement())
-  assetTag      String         @unique
-  serialNumber  String         @unique
-  model         String
-  manufacturer  String
-  categoryId    Int
-  category      Category       @relation(fields: [categoryId], references: [id])
-  vendorId      Int?
-  vendor        Vendor?        @relation(fields: [vendorId], references: [id])
-  purchaseDate  DateTime?
-  purchasePrice Decimal?       @db.Decimal(12, 2)
-  invoiceFile   String?
-  warrantyStart DateTime?
-  warrantyEnd   DateTime?
-  warrantyFile  String?
-  locationId    Int?
-  location      Location?      @relation(fields: [locationId], references: [id])
-  departmentId  Int?
-  department    Department?    @relation(fields: [departmentId], references: [id])
-  status        AssetStatus    @default(AVAILABLE)
-  assignedToId  Int?
-  assignedTo    User?          @relation("AssetAssignee", fields: [assignedToId], references: [id])
-  notes         String?
-  ram           String?
-  storage       String?
-  cpu           String?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  assignments   Assignment[]
-  repairTickets RepairTicket[]
+  id                   Int            @id @default(autoincrement())
+  assetTag             String         @unique
+  serialNumber         String         @unique
+  model                String
+  manufacturer         String
+  categoryId           Int
+  category             Category       @relation(fields: [categoryId], references: [id])
+  vendorId             Int?
+  vendor               Vendor?        @relation(fields: [vendorId], references: [id])
+  purchaseDate         DateTime?
+  purchasePrice        Decimal?       @db.Decimal(12, 2)
+  invoiceFile          String?
+  warrantyStart        DateTime?
+  warrantyEnd          DateTime?
+  warrantyFile         String?
+  locationId           Int?
+  location             Location?      @relation(fields: [locationId], references: [id])
+  departmentId         Int?
+  department           Department?    @relation(fields: [departmentId], references: [id])
+  status               AssetStatus    @default(AVAILABLE)
+  assignedToId         Int?
+  assignedTo           User?          @relation("AssetAssignee", fields: [assignedToId], references: [id])
+  notes                String?
+  ram                  String?
+  storage              String?
+  cpu                  String?
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+  assignments          Assignment[]
+  repairTickets        RepairTicket[]
+
+  // Expanded CMDB fields
+  gst                  Decimal?       @db.Decimal(12, 2)
+  insuranceDetails     String?
+  insuranceExpiry      DateTime?
+  floor                String?
+  cabin                String?
+  rackNumber           String?
+  costCentre           String?
+  ownerDepartment      String?
+  nextMaintenance      DateTime?
+  lastMaintenance      DateTime?
+  scrapDate            DateTime?
+  disposalMethod       String?
+
+  // Laptops/Desktops specific configurations
+  gpu                  String?
+  gpuMemory            String?
+  windowsEdition       String?
+  windowsVersion       String?
+  buildNumber          String?
+  activationStatus     String?
+  computerName         String?
+  domainName           String?
+  wifiMac              String?
+  bluetoothMac         String?
+  bitLockerStatus      String?
+  tpmVersion           String?
+  secureBootStatus     String?
+  defenderStatus       String?
+  esetStatus           String?
+  firewallStatus       String?
+  recoveryKey          String?
+
+  // Printer specific
+  drumModel            String?
+  currentPageCount     Int?           @default(0)
+
+  // Mobile specific
+  imeiNumber2          String?
+  carrier              String?
+  mdmStatus            String?
+
+  // Network specific
+  wanIp                String?
+  portsCount           Int?
+  ispName              String?
+  firmwareVersion      String?
 
   // ITSM relations
-  linkedTickets Ticket[]       @relation("AssetTickets")
+  linkedTickets        Ticket[]       @relation("AssetTickets")
+  maintenances         Maintenance[]
 
   @@index([status])
   @@index([categoryId])
   @@index([warrantyEnd])
+}
+
+model Maintenance {
+  id              Int       @id @default(autoincrement())
+  assetId         Int
+  asset           Asset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  maintenanceDate DateTime
+  notes           String?
+  performedBy     String?
+  cost            Decimal   @default(0) @db.Decimal(12, 2)
+  nextDueDate     DateTime?
+  status          String    @default("COMPLETED") // COMPLETED, SCHEDULED
+  createdAt       DateTime  @default(now())
 }
 
 model Assignment {

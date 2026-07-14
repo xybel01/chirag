@@ -3,12 +3,22 @@ const bcrypt = require('bcryptjs');
 const prisma = new PrismaClient();
 
 const CATEGORIES = [
-  ['Laptop', 'LAP'], ['Desktop', 'DSK'], ['Monitor', 'MON'], ['Printer', 'PRN'],
-  ['Firewall', 'FWL'], ['Router', 'RTR'], ['Switch', 'SWT'], ['Access Point', 'WAP'],
-  ['Mobile', 'MOB'], ['Keyboard', 'KBD'], ['Mouse', 'MOU'], ['RAM', 'RAM'],
-  ['SSD', 'SSD'], ['UPS', 'UPS'], ['CCTV', 'CCT'], ['Biometric Device', 'BIO'],
-  ['Software License', 'SWL'],
+  ['Desktop', 'DSK'], ['Laptop', 'LAP'], ['Workstation', 'WKS'], ['Mini PC', 'MPC'],
+  ['Server', 'SRV'], ['Virtual Server', 'VSRV'], ['NAS', 'NAS'], ['SAN Storage', 'SAN'],
+  ['Monitor', 'MON'], ['Printer', 'PRN'], ['Scanner', 'SCN'], ['Plotter', 'PLT'],
+  ['Keyboard', 'KBD'], ['Mouse', 'MOU'], ['Headset', 'HDS'], ['Webcam', 'CAM'],
+  ['Docking Station', 'DKS'], ['UPS', 'UPS'], ['Switch', 'SWT'], ['Router', 'RTR'],
+  ['Firewall', 'FWL'], ['WiFi Access Point', 'WAP'], ['CCTV Camera', 'CTV'],
+  ['NVR', 'NVR'], ['DVR', 'DVR'], ['Biometric Device', 'BIO'], ['Mobile', 'MOB'],
+  ['Tablet', 'TAB'], ['SIM Card', 'SIM'], ['IP Phone', 'IPP'], ['Conference Device', 'CONF'],
+  ['Projector', 'PRJ'], ['TV Display', 'DISP'], ['Barcode Scanner', 'BAR'],
+  ['POS Machine', 'POS'], ['Software License', 'SWL'], ['Microsoft 365 License', 'M365'],
+  ['Adobe License', 'ADOBE'], ['Antivirus License', 'AVIL'], ['SSL Certificate', 'SSL'],
+  ['Domain', 'DOM'], ['Cloud Subscription', 'CLOUD'], ['Azure Resource', 'AZR'],
+  ['AWS Resource', 'AWS'], ['Google Workspace', 'GWS'], ['Shared Mailbox', 'SHM'],
+  ['Distribution Group', 'DLG']
 ];
+
 const DEPARTMENTS = ['IT', 'HR', 'Accounts', 'Sales', 'Operations', 'Warehouse', 'Management'];
 const LOCATIONS = ['Head Office', 'Warehouse 1', 'Warehouse 2', 'Branch Office'];
 
@@ -112,67 +122,66 @@ async function main() {
       status: 'PUBLISHED',
       authorId: technician.id,
     },
-    {
-      title: 'Password Reset Self Service',
-      category: 'Access Control',
-      content: 'You can reset your domain password directly at selfservice.nationwide-paper.com. Authenticate using your Microsoft Authenticator mobile push code.',
-      status: 'PUBLISHED',
-      authorId: technician.id,
-    },
   ];
   for (const a of articles) {
     await prisma.knowledgeArticle.create({ data: a });
   }
 
-  // 7. Seed Custom Fields
-  const fields = [
-    { name: 'M365 License Type Required', fieldType: 'SELECT', options: JSON.stringify(['Business Premium', 'E3', 'E5']) },
-    { name: 'Affected Server Hostname', fieldType: 'TEXT' },
+  // 7. Seed Consumables stock items
+  const locHead = await prisma.location.findUnique({ where: { name: 'Head Office' } });
+  const consumables = [
+    { name: 'Standard USB Optical Mouse', type: 'ACCESSORY', quantity: 25, minQuantity: 5, unitPrice: 15.00, locationId: locHead.id },
+    { name: 'Standard QWERTY USB Keyboard', type: 'ACCESSORY', quantity: 18, minQuantity: 5, unitPrice: 25.00, locationId: locHead.id },
+    { name: 'HMDI 4K Cable 2m', type: 'ACCESSORY', quantity: 30, minQuantity: 10, unitPrice: 8.50, locationId: locHead.id },
+    { name: 'Cat6 LAN Patch Cable 1m', type: 'ACCESSORY', quantity: 45, minQuantity: 10, unitPrice: 4.50, locationId: locHead.id },
+    { name: 'HP LaserJet 58A Toner', type: 'CONSUMABLE', quantity: 3, minQuantity: 5, unitPrice: 110.00, locationId: locHead.id }, // Low stock alert!
   ];
-  for (const f of fields) {
-    await prisma.customField.create({ data: f });
+  for (const c of consumables) {
+    await prisma.stockItem.create({ data: c });
   }
 
-  // 8. Seed sample tickets
-  await prisma.ticket.create({
+  // 8. Seed sample computers with expanded CMDB fields
+  const categoryLap = await prisma.category.findUnique({ where: { code: 'LAP' } });
+  const asset = await prisma.asset.create({
     data: {
-      ticketNo: 'INC-000001',
-      type: 'INCIDENT',
-      summary: 'Sales SQL database backup failure',
-      description: 'The automated nightly backup job for SQL Database failed with an out-of-storage error.',
-      priority: 'CRITICAL',
-      status: 'OPEN',
-      requesterId: manager.id,
-      affectedUserId: manager.id,
-      departmentId: salesDept.id,
-      assignedToId: technician.id,
-      slaStatus: 'WITHIN_SLA',
-      slaResolutionExpiry: new Date(Date.now() + 4 * 3600 * 1000), // 4 hours from now
+      assetTag: 'NPL-LT-0001',
+      serialNumber: 'SN-ThinkPad-X1',
+      model: 'ThinkPad X1 Carbon Gen 10',
+      manufacturer: 'Lenovo',
+      categoryId: categoryLap.id,
+      status: 'AVAILABLE',
+      ram: '16 GB LPDDR5',
+      storage: '512GB NVMe SSD',
+      cpu: 'Intel Core i7-1260P',
+      windowsEdition: 'Windows 11 Professional',
+      windowsVersion: '22H2',
+      buildNumber: '22621.1702',
+      activationStatus: 'Active',
+      computerName: 'NPL-LT-0001',
+      domainName: 'nationwide-paper.local',
+      bitLockerStatus: 'Enabled',
+      tpmVersion: '2.0',
+      secureBootStatus: 'Enabled',
+      defenderStatus: 'Running',
+      firewallStatus: 'Enabled',
+      nextMaintenance: new Date(Date.now() + 15 * 24 * 3600 * 1000), // in 15 days
     }
   });
 
-  await prisma.ticket.create({
+  // Seed maintenance record
+  await prisma.maintenance.create({
     data: {
-      ticketNo: 'SR-000001',
-      type: 'SERVICE_REQUEST',
-      summary: 'Requesting Adobe Acrobat Pro installation',
-      description: 'Need Acrobat Pro to modify and sign customer sales contracts.',
-      priority: 'MEDIUM',
-      status: 'PENDING_APPROVAL',
-      requesterId: employee.id,
-      affectedUserId: employee.id,
-      departmentId: salesDept.id,
-      slaStatus: 'WITHIN_SLA',
-      slaResolutionExpiry: new Date(Date.now() + 48 * 3600 * 1000), // 48 hours from now
+      assetId: asset.id,
+      maintenanceDate: new Date(Date.now() - 30 * 24 * 3600 * 1000), // 30 days ago
+      notes: 'Applied standard processor thermal paste renewal and OS clean reinstallation.',
+      performedBy: 'IT Support Engineer',
+      cost: 45.00,
+      nextDueDate: new Date(Date.now() + 15 * 24 * 3600 * 1000),
+      status: 'COMPLETED'
     }
   });
 
   console.log('Seed completed successfully.');
-  console.log('User logins (password for all: ChangeMe!2026):');
-  console.log(' - Admin: admin@nationwide-paper.com');
-  console.log(' - Manager: manager@nationwide-paper.com');
-  console.log(' - Support: technician@nationwide-paper.com');
-  console.log(' - Employee: employee@nationwide-paper.com');
 }
 
 main().catch((e) => { console.error(e); process.exit(1); }).finally(() => prisma.$disconnect());
