@@ -8,12 +8,15 @@ datasource db {
 }
 
 enum Role {
-  ADMIN
+  SUPER_ADMIN
   IT_MANAGER
   IT_SUPPORT
+  DEPARTMENT_MANAGER
   HR
   ACCOUNTS
+  APPROVER
   EMPLOYEE
+  AUDITOR
 }
 
 enum AssetStatus {
@@ -47,6 +50,48 @@ enum StockType {
   CONSUMABLE
 }
 
+enum TicketType {
+  INCIDENT
+  SERVICE_REQUEST
+  PROBLEM
+  CHANGE_REQUEST
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum TicketStatus {
+  NEW
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  PENDING_USER
+  PENDING_VENDOR
+  PENDING_APPROVAL
+  ON_HOLD
+  RESOLVED
+  CLOSED
+  REOPENED
+  CANCELLED
+}
+
+enum SLAStatus {
+  WITHIN_SLA
+  WARNING
+  BREACHED
+  PAUSED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 model User {
   id                 Int                 @id @default(autoincrement())
   email              String              @unique
@@ -69,6 +114,17 @@ model User {
   repairTickets      RepairTicket[]
   licenseAssignments LicenseAssignment[]
   auditLogs          AuditLog[]
+
+  // ITSM Relations
+  ticketRequisitions Ticket[]            @relation("TicketRequester")
+  ticketAffections   Ticket[]            @relation("TicketAffectedUser")
+  ticketAssignments  Ticket[]            @relation("TicketAssignee")
+  ticketComments     TicketComment[]
+  ticketWatchings    TicketWatcher[]
+  workLogs           WorkLog[]
+  approvalSteps      ApprovalStep[]
+  kbArticles         KnowledgeArticle[]
+  offboardingRequests OffboardingRequest[]
 }
 
 model Department {
@@ -89,7 +145,7 @@ model Location {
 model Vendor {
   id            Int            @id @default(autoincrement())
   name          String         @unique
-  contactName   String?
+  contactPerson String?
   email         String?
   phone         String?
   address       String?
@@ -99,10 +155,11 @@ model Vendor {
 }
 
 model Category {
-  id     Int     @id @default(autoincrement())
-  name   String  @unique
-  code   String  @unique // used in asset tag e.g. NP-LAP-0001
-  assets Asset[]
+  id      Int      @id @default(autoincrement())
+  name    String   @unique
+  code    String   @unique // used in asset tag e.g. NP-LAP-0001
+  assets  Asset[]
+  tickets Ticket[]
 }
 
 model Asset {
@@ -137,25 +194,28 @@ model Asset {
   assignments   Assignment[]
   repairTickets RepairTicket[]
 
+  // ITSM relations
+  linkedTickets Ticket[]       @relation("AssetTickets")
+
   @@index([status])
   @@index([categoryId])
   @@index([warrantyEnd])
 }
 
 model Assignment {
-  id           Int              @id @default(autoincrement())
-  assetId      Int
-  asset        Asset            @relation(fields: [assetId], references: [id])
-  userId       Int
-  user         User             @relation("AssignmentUser", fields: [userId], references: [id])
-  action       AssignmentAction
+  id            Int              @id @default(autoincrement())
+  assetId       Int
+  asset         Asset            @relation(fields: [assetId], references: [id])
+  userId        Int
+  user          User             @relation("AssignmentUser", fields: [userId], references: [id])
+  action        AssignmentAction
   performedById Int
-  performedBy  User             @relation("AssignmentActor", fields: [performedById], references: [id])
-  notes        String?
-  signature    String? // base64 PNG of employee digital signature
-  ackFile      String? // generated acknowledgement PDF path
-  createdAt    DateTime         @default(now())
-  returnedAt   DateTime?
+  performedBy   User             @relation("AssignmentActor", fields: [performedById], references: [id])
+  notes         String?
+  signature     String? // base64 PNG of employee digital signature
+  ackFile       String? // generated acknowledgement PDF path
+  createdAt     DateTime         @default(now())
+  returnedAt    DateTime?
 
   @@index([assetId])
   @@index([userId])
@@ -245,4 +305,215 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([createdAt])
+}
+
+// ==========================================
+// ITSM MODELS
+// ==========================================
+
+model Ticket {
+  id                  Int                @id @default(autoincrement())
+  ticketNo            String             @unique // INC-000001, SR-000001, CHG-000001
+  type                TicketType
+  summary             String
+  description         String
+  priority            TicketPriority     @default(MEDIUM)
+  status              TicketStatus       @default(NEW)
+  
+  requesterId         Int
+  requester           User               @relation("TicketRequester", fields: [requesterId], references: [id])
+  
+  affectedUserId      Int?
+  affectedUser        User?              @relation("TicketAffectedUser", fields: [affectedUserId], references: [id])
+  
+  departmentId        Int?
+  locationId          Int?
+  
+  categoryId          Int?
+  category            Category?          @relation(fields: [categoryId], references: [id])
+  
+  assignedToId        Int?
+  assignedTo          User?              @relation("TicketAssignee", fields: [assignedToId], references: [id])
+  
+  slaStatus           SLAStatus          @default(WITHIN_SLA)
+  slaResponseExpiry   DateTime?
+  slaResolutionExpiry DateTime?
+  firstResponseAt     DateTime?
+  dueAt               DateTime?
+  resolvedAt          DateTime?
+  closedAt            DateTime?
+  
+  parentTicketId      Int?
+  parentTicket        Ticket?            @relation("ParentChild", fields: [parentTicketId], references: [id])
+  childTickets        Ticket[]           @relation("ParentChild")
+  
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+  
+  comments            TicketComment[]
+  attachments         TicketAttachment[]
+  watchers            TicketWatcher[]
+  workLogs            WorkLog[]
+  approvals           Approval[]
+  linkedAssets        Asset[]            @relation("AssetTickets")
+  surveys             Survey[]
+  customValues        CustomFieldValue[]
+
+  @@index([status])
+  @@index([type])
+  @@index([priority])
+}
+
+model TicketComment {
+  id         Int      @id @default(autoincrement())
+  ticketId   Int
+  ticket     Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  authorId   Int
+  author     User     @relation(fields: [authorId], references: [id])
+  body       String
+  isInternal Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+model TicketAttachment {
+  id        Int      @id @default(autoincrement())
+  ticketId  Int
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  fileName  String
+  filePath  String
+  fileSize  Int
+  createdAt DateTime @default(now())
+}
+
+model TicketWatcher {
+  id       Int    @id @default(autoincrement())
+  ticketId Int
+  ticket   Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId   Int
+  user     User   @relation(fields: [userId], references: [id])
+  
+  @@unique([ticketId, userId])
+}
+
+model WorkLog {
+  id           Int      @id @default(autoincrement())
+  ticketId     Int
+  ticket       Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  technicianId Int
+  technician   User     @relation(fields: [technicianId], references: [id])
+  timeSpent    Int      // in minutes
+  notes        String?
+  createdAt    DateTime @default(now())
+}
+
+model SLA {
+  id                 Int            @id @default(autoincrement())
+  name               String
+  priority           TicketPriority
+  type               TicketType
+  responseTimeMins   Int
+  resolutionTimeMins Int
+  isActive           Boolean        @default(true)
+}
+
+model Approval {
+  id        Int            @id @default(autoincrement())
+  ticketId  Int
+  ticket    Ticket         @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  title     String
+  status    ApprovalStatus @default(PENDING)
+  notes     String?
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  steps     ApprovalStep[]
+}
+
+model ApprovalStep {
+  id         Int            @id @default(autoincrement())
+  approvalId Int
+  approval   Approval       @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+  approverId Int
+  approver   User           @relation(fields: [approverId], references: [id])
+  status     ApprovalStatus @default(PENDING)
+  comments   String?
+  actionedAt DateTime?
+}
+
+model AutomationRule {
+  id         Int      @id @default(autoincrement())
+  name       String
+  trigger    String // e.g. "TICKET_CREATED", "STATUS_CHANGED"
+  conditions Json // e.g. { "priority": "CRITICAL" }
+  actions    Json // e.g. { "assignTo": 5, "status": "ASSIGNED" }
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+}
+
+model KnowledgeArticle {
+  id         Int      @id @default(autoincrement())
+  title      String
+  content    String
+  category   String // e.g. "VPN", "Hardware"
+  status     String   @default("PUBLISHED") // "DRAFT" | "PUBLISHED"
+  authorId   Int
+  author     User     @relation(fields: [authorId], references: [id])
+  helpful    Int      @default(0)
+  notHelpful Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Survey {
+  id                 Int      @id @default(autoincrement())
+  ticketId           Int
+  ticket             Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  rating             Int      // 1 to 5
+  resolutionQuality  Int      // 1 to 5
+  technicianBehavior Int      // 1 to 5
+  responseTimeRating Int      // 1 to 5
+  comments           String?
+  createdAt          DateTime @default(now())
+}
+
+model OnboardingRequest {
+  id               Int      @id @default(autoincrement())
+  employeeName     String
+  personalEmail    String
+  companyEmail     String?
+  jobTitle         String
+  departmentId     Int
+  reportingManager String
+  joiningDate      DateTime
+  officeLocation   String
+  assetsNeeded     Json // list of asset types requested
+  status           String   @default("PENDING") // PENDING, COMPLETED
+  createdAt        DateTime @default(now())
+}
+
+model OffboardingRequest {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  user            User     @relation(fields: [userId], references: [id])
+  lastWorkingDate DateTime
+  disableAccount  Boolean  @default(true)
+  returnAssets    Boolean  @default(true)
+  status          String   @default("PENDING") // PENDING, COMPLETED
+  createdAt       DateTime @default(now())
+}
+
+model CustomField {
+  id        Int                @id @default(autoincrement())
+  name      String             @unique
+  fieldType String // "TEXT" | "NUMBER" | "SELECT"
+  options   String? // JSON array of options if SELECT
+  values    CustomFieldValue[]
+}
+
+model CustomFieldValue {
+  id            Int         @id @default(autoincrement())
+  customFieldId Int
+  customField   CustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+  ticketId      Int
+  ticket        Ticket      @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  value         String
 }

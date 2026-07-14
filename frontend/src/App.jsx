@@ -22,6 +22,14 @@ import UserAssetProfileDetail from './pages/UserAssetProfileDetail.jsx';
 import AssignAssets from './pages/AssignAssets.jsx';
 import AssetCategoryList from './pages/AssetCategoryList.jsx';
 
+// ITSM Portal New Screens
+import ServicePortal from './pages/ServicePortal.jsx';
+import TicketQueue from './pages/TicketQueue.jsx';
+import TicketDetail from './pages/TicketDetail.jsx';
+import ChangeCalendar from './pages/ChangeCalendar.jsx';
+import KnowledgeBase from './pages/KnowledgeBase.jsx';
+import AdminITSM from './pages/AdminITSM.jsx';
+
 function Protected({ children, action }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="flex h-screen items-center justify-center text-gray-500">Loading…</div>;
@@ -37,7 +45,17 @@ export default function App() {
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<Protected><Layout /></Protected>}>
-        <Route path="/" element={<Protected action="viewInventory"><Dashboard /></Protected>} />
+        
+        {/* Main Service Desk / IT dashboard redirect */}
+        <Route path="/" element={<Protected><ServicePortal /></Protected>} />
+        
+        {/* ITSM Routing Mappings */}
+        <Route path="/tickets" element={<Protected><TicketQueue /></Protected>} />
+        <Route path="/tickets/:id" element={<Protected><TicketDetail /></Protected>} />
+        <Route path="/changes-calendar" element={<Protected><ChangeCalendar /></Protected>} />
+        <Route path="/kb" element={<Protected><KnowledgeBase /></Protected>} />
+        <Route path="/admin-itsm" element={<Protected><AdminITSM /></Protected>} />
+
         <Route path="/itsm-dashboard" element={<Protected action="viewInventory"><ITSMDashboard /></Protected>} />
         <Route path="/user-profiles" element={<Protected action="viewInventory"><UserAssetProfiles /></Protected>} />
         <Route path="/user-profiles/:id" element={<Protected action="viewInventory"><UserAssetProfileDetail /></Protected>} />

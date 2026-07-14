@@ -3,9 +3,13 @@ import { useAuth, can } from '../context/AuthContext.jsx';
 import AIAssistant from './AIAssistant.jsx';
 
 const NAV = [
-  { to: '/', label: 'Dashboard', action: 'viewInventory' },
-  { to: '/itsm-dashboard', label: 'ITSM Dashboard', action: 'viewInventory' },
-  { to: '/user-profiles', label: 'User Asset Profiles', action: 'viewInventory' },
+  { to: '/', label: '🏢 Service Portal' },
+  { to: '/tickets', label: '🎫 Support Queues' },
+  { to: '/changes-calendar', label: '📅 Change Calendar' },
+  { to: '/kb', label: '📚 Knowledge Base' },
+  { to: '/itsm-dashboard', label: '📊 ITSM Dashboard', action: 'viewInventory' },
+  { to: '/admin-itsm', label: '⚙️ Admin ITSM Settings', action: 'viewInventory' },
+  { to: '/user-profiles', label: '👤 User Asset Profiles', action: 'viewInventory' },
   { to: '/assets/assign', label: 'Assign Assets', action: 'manageInventory' },
   { to: '/inventory/computers', label: '💻 Computers', action: 'viewInventory' },
   { to: '/inventory/laptops', label: '  └ Laptops', action: 'viewInventory' },
