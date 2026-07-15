@@ -56,7 +56,9 @@ try {
     $BitLocker = "Unknown"
     if (Get-Command Get-BitLockerVolume -ErrorAction SilentlyContinue) {
         $BLVol = Get-BitLockerVolume -MountPoint "C:" -ErrorAction SilentlyContinue
-        $BitLocker = $BLVol.ProtectionStatus.ToString()
+        if ($BLVol -and $BLVol.ProtectionStatus -ne $null) {
+            $BitLocker = $BLVol.ProtectionStatus.ToString()
+        }
     }
 
     # 4. Gather Windows Updates & Defender
@@ -67,8 +69,12 @@ try {
     }
 
     $LastUpdate = "Recent"
-    if (Get-HotFix -ErrorAction SilentlyContinue) {
-        $LastUpdate = (Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 1).InstalledOn.ToString("yyyy-MM-dd")
+    $HotFixes = Get-HotFix -ErrorAction SilentlyContinue
+    if ($HotFixes) {
+        $Latest = $HotFixes | Sort-Object InstalledOn -Descending | Select-Object -First 1
+        if ($Latest -and $Latest.InstalledOn) {
+            $LastUpdate = $Latest.InstalledOn.ToString("yyyy-MM-dd")
+        }
     }
 
     # 5. Battery Health
@@ -91,6 +97,28 @@ try {
         Group-Object name | ForEach-Object { $_.Group[0] } # Remove duplicates
 
     Write-Log "Found $($InstalledApps.Count) installed applications."
+
+    # 6b. Gather Connected Peripherals (Mouse, Headphone, Camera)
+    Write-Log "Retrieving connected peripherals (Mouse, Audio, Cameras)..."
+    $MouseInfo = "Generic Pointing Device"
+    $MouseDeviceList = Get-CimInstance Win32_PointingDevice -ErrorAction SilentlyContinue
+    if ($MouseDeviceList) {
+        $MouseInfo = ($MouseDeviceList | Select-Object -ExpandProperty Name) -join ", "
+    }
+    
+    $AudioInfo = "Integrated Audio Device"
+    $SoundDeviceList = Get-CimInstance Win32_SoundDevice -ErrorAction SilentlyContinue
+    if ($SoundDeviceList) {
+        $AudioInfo = ($SoundDeviceList | Select-Object -ExpandProperty Name) -join ", "
+    }
+    
+    $CameraInfo = "Integrated Web Camera"
+    if (Get-Command Get-PnpDevice -ErrorAction SilentlyContinue) {
+        $CamDevices = Get-PnpDevice -Class Camera, Image -Status OK -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FriendlyName
+        if ($CamDevices) {
+            $CameraInfo = ($CamDevices | Select-Object -Unique) -join ", "
+        }
+    }
 
     # 7. Construct Inventory JSON Payload
     $Payload = @{
@@ -116,6 +144,9 @@ try {
         lastWindowsUpdate  = $LastUpdate
         loggedInUser       = $CS.UserName
         installedSoftware  = $InstalledApps
+        mouseDevice        = $MouseInfo
+        headphoneDevice    = $AudioInfo
+        cameraDevice       = $CameraInfo
     }
 
     $JsonPayload = $Payload | ConvertTo-Json -Depth 5

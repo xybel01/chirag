@@ -21,7 +21,10 @@ async function submit(req, res) {
     operatingSystem,
     macAddress,
     ipAddress,
-    installedSoftware
+    installedSoftware,
+    mouseDevice,
+    headphoneDevice,
+    cameraDevice
   } = req.body;
 
   if (!serialNumber) {
@@ -47,6 +50,9 @@ async function submit(req, res) {
     const formattedNotes = `Host Name: ${hostName || 'unknown'}\n` +
       `MAC Address: ${macAddress || 'unknown'}\n` +
       `IP Address: ${ipAddress || 'unknown'}\n` +
+      `Connected Mouse: ${mouseDevice || 'Generic Mouse'}\n` +
+      `Connected Headphone: ${headphoneDevice || 'Generic Headset'}\n` +
+      `Connected Camera: ${cameraDevice || 'Integrated Camera'}\n` +
       `Remark: Auto-Synced by Windows Agent\n` +
       `Installed Software:\n${softwareStr}`;
 
