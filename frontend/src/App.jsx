@@ -18,13 +18,6 @@ import UserAssetProfileDetail from './pages/UserAssetProfileDetail.jsx';
 import AssignAssets from './pages/AssignAssets.jsx';
 import AssetCategoryList from './pages/AssetCategoryList.jsx';
 
-// ITSM Portal New Screens
-import ServicePortal from './pages/ServicePortal.jsx';
-import TicketQueue from './pages/TicketQueue.jsx';
-import TicketDetail from './pages/TicketDetail.jsx';
-import ChangeCalendar from './pages/ChangeCalendar.jsx';
-import KnowledgeBase from './pages/KnowledgeBase.jsx';
-import AdminITSM from './pages/AdminITSM.jsx';
 import Procurement from './pages/Procurement.jsx';
 import Monitoring from './pages/Monitoring.jsx';
 import SecurityCenter from './pages/SecurityCenter.jsx';
@@ -47,22 +40,15 @@ export default function App() {
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route element={<Protected><Layout /></Protected>}>
         
-        {/* Main Service Desk / IT dashboard redirect */}
-        <Route path="/" element={<Protected><ServicePortal /></Protected>} />
-        
-        {/* ITSM Routing Mappings */}
-        <Route path="/tickets" element={<Protected><TicketQueue /></Protected>} />
-        <Route path="/tickets/:id" element={<Protected><TicketDetail /></Protected>} />
-        <Route path="/changes-calendar" element={<Protected><ChangeCalendar /></Protected>} />
-        <Route path="/kb" element={<Protected><KnowledgeBase /></Protected>} />
-        <Route path="/admin-itsm" element={<Protected><AdminITSM /></Protected>} />
+        {/* Main Dashboard Landing */}
+        <Route path="/" element={<Protected action="viewInventory"><ITSMDashboard /></Protected>} />
+
         <Route path="/procurement" element={<Protected><Procurement /></Protected>} />
         <Route path="/monitoring" element={<Protected><Monitoring /></Protected>} />
         <Route path="/security" element={<Protected><SecurityCenter /></Protected>} />
         <Route path="/multi-company-settings" element={<Protected><MultiCompanySettings /></Protected>} />
         <Route path="/vendors" element={<Protected><Vendors /></Protected>} />
 
-        <Route path="/itsm-dashboard" element={<Protected action="viewInventory"><ITSMDashboard /></Protected>} />
         <Route path="/user-profiles" element={<Protected action="viewInventory"><UserAssetProfiles /></Protected>} />
         <Route path="/user-profiles/:id" element={<Protected action="viewInventory"><UserAssetProfileDetail /></Protected>} />
         
