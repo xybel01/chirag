@@ -5,10 +5,10 @@ const AuthContext = createContext(null);
 
 // Which navigation items each role can see.
 export const CAN = {
-  viewInventory: ['ADMIN', 'IT_MANAGER', 'IT_SUPPORT', 'HR', 'ACCOUNTS'],
-  manageInventory: ['ADMIN', 'IT_MANAGER', 'IT_SUPPORT'],
-  manageUsers: ['ADMIN', 'IT_MANAGER', 'HR'],
-  viewAudit: ['ADMIN', 'IT_MANAGER'],
+  viewInventory: ['SUPER_ADMIN', 'ADMIN', 'IT_MANAGER', 'IT_SUPPORT', 'HR', 'ACCOUNTS'],
+  manageInventory: ['SUPER_ADMIN', 'ADMIN', 'IT_MANAGER', 'IT_SUPPORT'],
+  manageUsers: ['SUPER_ADMIN', 'ADMIN', 'IT_MANAGER', 'HR'],
+  viewAudit: ['SUPER_ADMIN', 'ADMIN', 'IT_MANAGER'],
 };
 export const can = (user, action) => user && CAN[action]?.includes(user.role);
 
