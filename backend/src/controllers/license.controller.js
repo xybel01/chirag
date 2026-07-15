@@ -65,7 +65,7 @@ async function get(req, res) {
 }
 
 async function create(req, res) {
-  const { name, type, vendorId, licenseKey, totalSeats, purchaseDate, expiryDate, costPerSeat, notes } = req.body;
+  const { name, type, vendorId, licenseKey, totalSeats, purchaseDate, expiryDate, costPerSeat, notes, currency } = req.body;
   if (!name || !type) {
     return res.status(400).json({ error: 'Name and Type are required fields.' });
   }
@@ -86,7 +86,8 @@ async function create(req, res) {
         expiryDate: expiryDate ? new Date(expiryDate) : null,
         costPerSeat: perSeatCost,
         totalCost,
-        notes: notes || null
+        notes: notes || null,
+        currency: currency || 'GBP'
       }
     });
 
@@ -98,7 +99,7 @@ async function create(req, res) {
 
 async function update(req, res) {
   const { id } = req.params;
-  const { name, type, vendorId, licenseKey, totalSeats, purchaseDate, expiryDate, costPerSeat, notes } = req.body;
+  const { name, type, vendorId, licenseKey, totalSeats, purchaseDate, expiryDate, costPerSeat, notes, currency } = req.body;
 
   try {
     const seats = totalSeats ? Number(totalSeats) : 1;
@@ -117,7 +118,8 @@ async function update(req, res) {
         expiryDate: expiryDate ? new Date(expiryDate) : null,
         costPerSeat: perSeatCost,
         totalCost,
-        notes: notes || null
+        notes: notes || null,
+        currency: currency || 'GBP'
       }
     });
 

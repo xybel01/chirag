@@ -44,7 +44,8 @@ export default function Licenses() {
     purchaseDate: '',
     expiryDate: '',
     costPerSeat: '',
-    notes: ''
+    notes: '',
+    currency: 'GBP'
   });
 
   const [selectedLicense, setSelectedLicense] = useState(null);
@@ -82,7 +83,8 @@ export default function Licenses() {
       purchaseDate: '',
       expiryDate: '',
       costPerSeat: '',
-      notes: ''
+      notes: '',
+      currency: 'GBP'
     });
     setError('');
     setModalOpen(true);
@@ -95,7 +97,8 @@ export default function Licenses() {
       vendorId: license.vendorId || '',
       purchaseDate: license.purchaseDate ? license.purchaseDate.substring(0, 10) : '',
       expiryDate: license.expiryDate ? license.expiryDate.substring(0, 10) : '',
-      costPerSeat: license.costPerSeat || ''
+      costPerSeat: license.costPerSeat || '',
+      currency: license.currency || 'GBP'
     });
     setError('');
     setModalOpen(true);
@@ -174,11 +177,33 @@ export default function Licenses() {
     }
   };
 
+  const CURRENCY_SYMBOLS = {
+    INR: '₹',
+    GBP: '£',
+    USD: '$',
+    PLN: 'zł',
+    EUR: '€'
+  };
+
   const fmtDate = (d) => d ? new Date(d).toISOString().slice(0, 10) : '—';
-  const fmtMoney = (m) => m ? `£${Number(m).toLocaleString('en-GB', { minimumFractionDigits: 2 })}` : '—';
+  const fmtMoney = (m, currencyCode = 'GBP') => {
+    if (!m) return '—';
+    const symbol = CURRENCY_SYMBOLS[currencyCode] || '£';
+    const val = Number(m).toLocaleString('en-GB', { minimumFractionDigits: 2 });
+    return currencyCode === 'PLN' ? `${val} zł` : `${symbol}${val}`;
+  };
 
   // Metrics
-  const totalSpend = licenses.reduce((sum, item) => sum + (Number(item.totalCost) || 0), 0);
+  const spendByCurrency = licenses.reduce((acc, item) => {
+    const curr = item.currency || 'GBP';
+    acc[curr] = (acc[curr] || 0) + (Number(item.totalCost) || 0);
+    return acc;
+  }, {});
+
+  const spendSummaryStr = Object.keys(spendByCurrency).length > 0
+    ? Object.entries(spendByCurrency).map(([curr, sum]) => fmtMoney(sum, curr)).join(' | ')
+    : '—';
+
   const activeSubsCount = licenses.length;
   const totalAllocatedSeats = licenses.reduce((sum, item) => sum + (item.activeSeatsUsed || 0), 0);
   const totalAvailableSeats = licenses.reduce((sum, item) => sum + (item.totalSeats || 0), 0);
@@ -201,7 +226,7 @@ export default function Licenses() {
       <div className="grid gap-4 sm:grid-cols-4">
         <div className="card p-4 bg-white border border-gray-100 flex flex-col justify-between">
           <div className="text-gray-400 font-bold uppercase tracking-wider text-3xs">Total Annual Cost</div>
-          <div className="text-xl font-extrabold text-indigo-750 mt-1">{fmtMoney(totalSpend)}</div>
+          <div className="text-xl font-extrabold text-indigo-750 mt-1">{spendSummaryStr}</div>
         </div>
         <div className="card p-4 bg-white border border-gray-100 flex flex-col justify-between">
           <div className="text-gray-400 font-bold uppercase tracking-wider text-3xs">Active Subscriptions</div>
@@ -252,8 +277,8 @@ export default function Licenses() {
             const colorClass = diffDays < 0 ? 'text-red-650 bg-red-50' : diffDays <= 30 ? 'text-amber-650 bg-amber-50' : 'text-gray-600 bg-gray-50';
             return <span className={`px-2 py-0.5 rounded-full font-semibold select-none ${colorClass}`}>{fmtDate(l.expiryDate)}</span>;
           }},
-          { header: 'Cost per Seat', key: 'costPerSeat', render: (l) => fmtMoney(l.costPerSeat) },
-          { header: 'Total Annual Cost', key: 'totalCost', render: (l) => fmtMoney(l.totalCost) },
+          { header: 'Cost per Seat', key: 'costPerSeat', render: (l) => fmtMoney(l.costPerSeat, l.currency) },
+          { header: 'Total Annual Cost', key: 'totalCost', render: (l) => fmtMoney(l.totalCost, l.currency) },
           {
             header: 'Actions',
             render: (l) => (
@@ -318,7 +343,21 @@ export default function Licenses() {
             <Field label="Allocated Seats Count" required>
               <input className="input" type="number" required value={form.totalSeats} onChange={(e) => setForm({ ...form, totalSeats: e.target.value })} />
             </Field>
-            <Field label="Cost per Seat (£)">
+            <Field label="Billing Currency" required>
+              <Select
+                value={form.currency || 'GBP'}
+                onChange={(v) => setForm({ ...form, currency: v })}
+                options={[
+                  { value: 'INR', label: 'INR (₹)' },
+                  { value: 'GBP', label: 'GBP (£)' },
+                  { value: 'USD', label: 'USD ($)' },
+                  { value: 'PLN', label: 'PLN (zł)' },
+                  { value: 'EUR', label: 'EUR (€)' }
+                ]}
+                required
+              />
+            </Field>
+            <Field label="Cost per Seat">
               <input className="input" type="number" step="0.01" placeholder="0.00" value={form.costPerSeat} onChange={(e) => setForm({ ...form, costPerSeat: e.target.value })} />
             </Field>
             <Field label="Purchase / Activation Date">

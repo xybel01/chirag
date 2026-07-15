@@ -318,6 +318,7 @@ model License {
   costPerSeat  Decimal?            @db.Decimal(12, 2)
   totalCost    Decimal?            @db.Decimal(12, 2)
   notes        String?
+  currency     String?             @default("GBP")
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
   assignments  LicenseAssignment[]
