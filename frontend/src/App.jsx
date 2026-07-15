@@ -9,6 +9,7 @@ import AssetDetail from './pages/AssetDetail.jsx';
 import Assignments from './pages/Assignments.jsx';
 import Stock from './pages/Stock.jsx';
 import Reports from './pages/Reports.jsx';
+import Licenses from './pages/Licenses.jsx';
 import Users from './pages/Users.jsx';
 import AuditLog from './pages/AuditLog.jsx';
 import ImportAssets from './pages/ImportAssets.jsx';
@@ -68,6 +69,7 @@ export default function App() {
         <Route path="/assets/:id" element={<Protected action="viewInventory"><AssetDetail /></Protected>} />
         <Route path="/assignments" element={<Protected action="viewInventory"><Assignments /></Protected>} />
         <Route path="/stock" element={<Protected action="viewInventory"><Stock /></Protected>} />
+        <Route path="/licenses" element={<Protected action="viewInventory"><Licenses /></Protected>} />
         <Route path="/reports" element={<Protected action="viewInventory"><Reports /></Protected>} />
         <Route path="/users" element={<Protected action="manageUsers"><Users /></Protected>} />
         <Route path="/audit" element={<Protected action="viewAudit"><AuditLog /></Protected>} />

@@ -22,6 +22,7 @@ app.use('/api/meta', require('./routes/meta.routes'));
 app.use('/api/assets', require('./routes/asset.routes'));
 app.use('/api/assignments', require('./routes/assignment.routes'));
 app.use('/api/stock', require('./routes/stock.routes'));
+app.use('/api/licenses', require('./routes/license.routes'));
 app.use('/api/reports', require('./routes/report.routes'));
 app.use('/api/dashboard', require('./routes/dashboard.routes'));
 app.use('/api/audit', require('./routes/audit.routes'));
