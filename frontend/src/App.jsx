@@ -13,7 +13,6 @@ import Licenses from './pages/Licenses.jsx';
 import Reports from './pages/Reports.jsx';
 import Users from './pages/Users.jsx';
 import AuditLog from './pages/AuditLog.jsx';
-import MyAssets from './pages/MyAssets.jsx';
 import ImportAssets from './pages/ImportAssets.jsx';
 import ITSMDashboard from './pages/ITSMDashboard.jsx';
 import UserAssetProfiles from './pages/UserAssetProfiles.jsx';
@@ -90,7 +89,6 @@ export default function App() {
         <Route path="/reports" element={<Protected action="viewInventory"><Reports /></Protected>} />
         <Route path="/users" element={<Protected action="manageUsers"><Users /></Protected>} />
         <Route path="/audit" element={<Protected action="viewAudit"><AuditLog /></Protected>} />
-        <Route path="/my-assets" element={<MyAssets />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

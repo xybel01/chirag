@@ -32,7 +32,6 @@ const NAV = [
   { to: '/reports', label: 'Reports', action: 'viewInventory' },
   { to: '/users', label: 'Users', action: 'manageUsers' },
   { to: '/audit', label: 'Audit Log', action: 'viewAudit' },
-  { to: '/my-assets', label: 'My Assets' },
 ];
 
 export default function Layout() {
