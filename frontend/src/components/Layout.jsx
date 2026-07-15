@@ -27,8 +27,6 @@ const NAV = [
   { to: '/assets', label: 'All Assets', action: 'viewInventory' },
   { to: '/assignments', label: 'Assignments', action: 'viewInventory' },
   { to: '/stock', label: 'Stock', action: 'viewInventory' },
-  { to: '/repairs', label: 'Repairs', action: 'viewInventory' },
-  { to: '/licenses', label: 'Licenses', action: 'viewInventory' },
   { to: '/reports', label: 'Reports', action: 'viewInventory' },
   { to: '/users', label: 'Users', action: 'manageUsers' },
   { to: '/audit', label: 'Audit Log', action: 'viewAudit' },
