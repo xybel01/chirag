@@ -4,7 +4,6 @@ import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
-import Dashboard from './pages/Dashboard.jsx';
 import Assets from './pages/Assets.jsx';
 import AssetDetail from './pages/AssetDetail.jsx';
 import Assignments from './pages/Assignments.jsx';
