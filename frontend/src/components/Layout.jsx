@@ -4,9 +4,6 @@ import AIAssistant from './AIAssistant.jsx';
 
 const NAV = [
   { to: '/', label: '📊 ITAM Dashboard', action: 'viewInventory' },
-  { to: '/procurement', label: '🛍️ Procurement & POs' },
-  { to: '/monitoring', label: '📈 Infrastructure Monitor' },
-  { to: '/security', label: '🛡️ Compliance Security' },
   { to: '/multi-company-settings', label: '🏢 Multi-Company Configs' },
   { to: '/vendors', label: '🤝 Vendor Directory' },
   { to: '/user-profiles', label: '👤 User Asset Profiles', action: 'viewInventory' },
@@ -33,29 +30,63 @@ export default function Layout() {
   const navigate = useNavigate();
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
-      <aside className="w-56 shrink-0 bg-brand-800 text-white flex flex-col">
-        <div className="px-4 py-5 border-b border-brand-700">
-          <div className="font-bold leading-tight">Nationwide Paper</div>
-          <div className="text-xs text-brand-100">IT Inventory Portal</div>
+    <div className="flex min-h-screen bg-gray-50 print:bg-white">
+      <aside className="w-60 shrink-0 bg-slate-900 text-slate-100 flex flex-col print:hidden border-r border-slate-950 shadow-lg">
+        <div className="px-5 py-4 border-b border-slate-800 bg-slate-950/40 flex items-center justify-between">
+          <div>
+            <div className="font-black text-xs text-white leading-tight uppercase tracking-wider">Nationwide Paper</div>
+            <div className="text-3xs text-slate-450 font-extrabold uppercase tracking-widest mt-0.5">IT Portal</div>
+          </div>
+          <span className="bg-indigo-950 border border-indigo-850 px-2 py-0.5 text-3xs font-extrabold rounded text-indigo-400">ITAM</span>
         </div>
-        <nav className="flex-1 py-3">
-          {NAV.filter((n) => !n.action || can(user, n.action)).map((n) => (
-            <NavLink key={n.to} to={n.to} end={n.to === '/'}
-              className={({ isActive }) => `block px-4 py-2 text-sm ${isActive ? 'bg-brand-700 font-semibold' : 'text-brand-100 hover:bg-brand-700/60'}`}>
-              {n.label}
-            </NavLink>
-          ))}
+        
+        <nav className="flex-1 py-4 overflow-y-auto space-y-1">
+          {NAV.filter((n) => !n.action || can(user, n.action)).map((n) => {
+            const isSubItem = n.label.startsWith(' ');
+            const displayLabel = n.label.replace('  └ ', '').trim();
+            
+            return (
+              <NavLink 
+                key={n.to} 
+                to={n.to} 
+                end={n.to === '/'}
+                className={({ isActive }) => `
+                  mx-3 px-3 py-2 rounded-xl text-xs font-semibold tracking-wide transition-all duration-150 flex items-center gap-2.5
+                  ${isSubItem ? 'pl-8 text-slate-400 hover:text-slate-200' : 'text-slate-300 hover:bg-slate-800/40 hover:text-white'}
+                  ${isActive ? (isSubItem ? 'bg-slate-800/60 text-indigo-400 font-bold' : 'bg-indigo-600 text-white font-black shadow-md shadow-indigo-950/30') : ''}
+                `}
+              >
+                {isSubItem ? (
+                  <>
+                    <span className="text-3xs text-slate-600">•</span>
+                    <span>{displayLabel}</span>
+                  </>
+                ) : (
+                  <span>{n.label}</span>
+                )}
+              </NavLink>
+            );
+          })}
         </nav>
-        <div className="p-4 border-t border-brand-700 text-sm">
-          <div className="font-medium truncate">{user?.name}</div>
-          <div className="text-xs text-brand-100">{user?.role?.replace('_', ' ')}</div>
-          <button onClick={() => { logout(); navigate('/login'); }} className="mt-2 text-xs underline text-brand-100 hover:text-white">Sign out</button>
+
+        <div className="p-4 border-t border-slate-800 bg-slate-950/30 flex items-center justify-between">
+          <div className="truncate max-w-[130px]">
+            <div className="font-bold text-white text-xs truncate leading-tight">{user?.name}</div>
+            <div className="text-3xs text-slate-450 font-extrabold uppercase tracking-wider mt-0.5">{user?.role?.replace('_', ' ')}</div>
+          </div>
+          <button 
+            onClick={() => { logout(); navigate('/login'); }} 
+            className="px-2.5 py-1 text-3xs font-extrabold bg-slate-800 border border-slate-700 text-slate-300 rounded hover:bg-slate-700 hover:text-white transition-all"
+          >
+            Sign out
+          </button>
         </div>
       </aside>
-      <main className="flex-1 p-6 overflow-x-auto relative">
+      <main className="flex-1 p-6 print:p-0 overflow-x-auto relative">
         <Outlet />
-        <AIAssistant />
+        <div className="print:hidden">
+          <AIAssistant />
+        </div>
       </main>
     </div>
   );

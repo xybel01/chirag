@@ -5,7 +5,7 @@ export default function PageHeader({ title, subtitle, actions }) {
         <h1 className="text-xl font-bold text-gray-800">{title}</h1>
         {subtitle && <p className="text-sm text-gray-500">{subtitle}</p>}
       </div>
-      <div className="flex gap-2">{actions}</div>
+      <div className="flex gap-2 print:hidden">{actions}</div>
     </div>
   );
 }

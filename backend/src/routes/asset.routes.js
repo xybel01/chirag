@@ -17,18 +17,18 @@ const assetSchema = z.object({
   model: z.string().min(1),
   manufacturer: z.string().min(1),
   categoryId: z.coerce.number().int(),
-  vendorId: z.coerce.number().int().optional().or(z.literal('')),
-  purchaseDate: z.string().optional().or(z.literal('')),
-  purchasePrice: z.coerce.number().nonnegative().optional().or(z.literal('')),
-  warrantyStart: z.string().optional().or(z.literal('')),
-  warrantyEnd: z.string().optional().or(z.literal('')),
-  locationId: z.coerce.number().int().optional().or(z.literal('')),
-  departmentId: z.coerce.number().int().optional().or(z.literal('')),
-  status: z.enum(['AVAILABLE', 'ASSIGNED', 'REPAIR', 'FAULTY', 'LOST', 'DISPOSED']).optional(),
-  notes: z.string().optional(),
-  ram: z.string().optional().or(z.literal('')),
-  storage: z.string().optional().or(z.literal('')),
-  cpu: z.string().optional().or(z.literal('')),
+  vendorId: z.coerce.number().int().optional().nullable().or(z.literal('')),
+  purchaseDate: z.string().optional().nullable().or(z.literal('')),
+  purchasePrice: z.coerce.number().nonnegative().optional().nullable().or(z.literal('')),
+  warrantyStart: z.string().optional().nullable().or(z.literal('')),
+  warrantyEnd: z.string().optional().nullable().or(z.literal('')),
+  locationId: z.coerce.number().int().optional().nullable().or(z.literal('')),
+  departmentId: z.coerce.number().int().optional().nullable().or(z.literal('')),
+  status: z.enum(['AVAILABLE', 'ASSIGNED', 'REPAIR', 'FAULTY', 'LOST', 'DISPOSED']).optional().nullable(),
+  notes: z.string().optional().nullable(),
+  ram: z.string().optional().nullable().or(z.literal('')),
+  storage: z.string().optional().nullable().or(z.literal('')),
+  cpu: z.string().optional().nullable().or(z.literal('')),
 }).passthrough();
 
 router.use(authenticate);
@@ -38,6 +38,6 @@ router.get('/:id/qrcode', requireRole(...VIEWERS), ah(c.qrcode));
 router.get('/:id/barcode', requireRole(...VIEWERS), ah(c.barcode));
 router.post('/', requireRole('IT_MANAGER', 'IT_SUPPORT'), docs, validate(assetSchema), ah(c.create));
 router.put('/:id', requireRole('IT_MANAGER', 'IT_SUPPORT'), docs, validate(assetSchema.partial()), ah(c.update));
-router.delete('/:id', requireRole('IT_MANAGER'), ah(c.remove));
+router.delete('/:id', requireRole('IT_MANAGER', 'IT_SUPPORT'), ah(c.remove));
 
 module.exports = router;

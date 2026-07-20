@@ -6,6 +6,7 @@ import PageHeader from '../components/PageHeader.jsx';
 import DataTable from '../components/DataTable.jsx';
 import Modal from '../components/Modal.jsx';
 import { Field, Select } from '../components/FormField.jsx';
+import { syncAssetsToFirestore } from '../utils/sync.js';
 
 export default function AssetCategoryList({ type }) {
   const { user } = useAuth();
@@ -19,7 +20,6 @@ export default function AssetCategoryList({ type }) {
   // Modal states
   const [modalOpen, setModalOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState(null);
-  const [formTab, setFormTab] = useState('basic'); // 'basic' | 'specs' | 'purchase' | 'network'
   const [form, setForm] = useState({});
   const [error, setError] = useState('');
 
@@ -53,6 +53,7 @@ export default function AssetCategoryList({ type }) {
       const resList = await Promise.all(assetPromises);
       const categoryAssets = resList.flatMap(r => r.data.items);
       setAssets(categoryAssets);
+      syncAssetsToFirestore(categoryAssets);
     } catch (err) {
       console.error('Error fetching category assets:', err);
     } finally {
@@ -79,7 +80,6 @@ export default function AssetCategoryList({ type }) {
 
   const openCreate = () => {
     setEditingAsset(null);
-    setFormTab('basic');
     setForm({
       category: currentConfig.defaultCat,
       manufacturer: '',
@@ -117,7 +117,6 @@ export default function AssetCategoryList({ type }) {
 
   const openEdit = (asset) => {
     setEditingAsset(asset);
-    setFormTab('basic');
     setForm({
       ...asset,
       category: asset.category?.name || currentConfig.defaultCat,
@@ -164,6 +163,16 @@ export default function AssetCategoryList({ type }) {
     }
   };
 
+  const handleDelete = async (asset) => {
+    if (!window.confirm(`Are you sure you want to delete asset ${asset.assetTag}?`)) return;
+    try {
+      await api.delete(`/assets/${asset.id}`);
+      await loadData();
+    } catch (err) {
+      alert(apiError(err));
+    }
+  };
+
   const getColumns = () => {
     return [
       { header: 'Asset ID', render: (a) => <span className="font-extrabold text-indigo-900">{a.assetTag}</span> },
@@ -171,7 +180,28 @@ export default function AssetCategoryList({ type }) {
       { header: 'Model', key: 'model' },
       { header: 'Serial No.', key: 'serialNumber' },
       { header: 'Status', render: (a) => <span className={`px-2.5 py-0.5 rounded-full text-3xs font-black border uppercase tracking-wider ${getBadgeStyle(a.status)}`}>{a.status}</span> },
-      { header: 'Assignee', render: (a) => a.assignedTo?.name || <span className="text-gray-400">Available</span> }
+      { header: 'Assignee', render: (a) => a.assignedTo?.name || <span className="text-gray-400">Available</span> },
+      {
+        header: 'Actions',
+        render: (a) => (
+          <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+            <button
+              onClick={() => openEdit(a)}
+              className="px-2 py-1 text-2xs font-semibold bg-brand-50 border border-brand-200 text-brand-700 rounded-lg hover:bg-brand-100 transition-colors"
+            >
+              Edit
+            </button>
+            {['ADMIN', 'IT_MANAGER', 'IT_SUPPORT'].includes(user?.role) && (
+              <button
+                onClick={() => handleDelete(a)}
+                className="px-2 py-1 text-2xs font-semibold bg-red-50 border border-red-200 text-red-700 rounded-lg hover:bg-red-100 transition-colors"
+              >
+                Delete
+              </button>
+            )}
+          </div>
+        )
+      }
     ];
   };
 
@@ -203,27 +233,14 @@ export default function AssetCategoryList({ type }) {
       />
 
       {/* Add / Edit Asset Modal */}
-      <Modal open={modalOpen} title={editingAsset ? `Edit Device ${form.assetTag}` : `Add New ${form.category}`} onClose={() => setModalOpen(false)}>
+      <Modal open={modalOpen} title={editingAsset ? `Edit Device ${form.assetTag}` : `Add New ${form.category}`} onClose={() => setModalOpen(false)} wide>
         {error && <div className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
         
-        {/* Form Modal Tabs */}
-        <div className="flex border-b border-gray-100 mb-4 text-xs font-bold">
-          {['basic', 'specs', 'purchase', 'network'].map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setFormTab(tab)}
-              className={`px-4 py-2 border-b-2 transition-colors uppercase tracking-wider text-3xs ${formTab === tab ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
-            >
-              {tab} Details
-            </button>
-          ))}
-        </div>
-
-        <form onSubmit={handleSave} className="space-y-4 text-xs">
+        <form onSubmit={handleSave} className="space-y-6 text-xs max-h-[75vh] overflow-y-auto pr-1">
           
-          {/* TAB 1: BASIC INFO */}
-          {formTab === 'basic' && (
+          {/* SECTION 1: BASIC INFO */}
+          <div className="space-y-3">
+            <h4 className="font-extrabold text-indigo-900 border-b border-indigo-50 pb-1 text-2xs uppercase tracking-wider">1. Basic Details</h4>
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="Category" required>
                 <Select
@@ -264,95 +281,99 @@ export default function AssetCategoryList({ type }) {
                 />
               </Field>
             </div>
-          )}
+          </div>
 
-          {/* TAB 2: SPECS & CMDB CONFIG */}
-          {formTab === 'specs' && (
-            <div className="grid gap-3 md:grid-cols-2">
-              {['Laptop', 'Desktop'].includes(form.category) && (
-                <>
-                  <Field label="CPU Configuration">
-                    <input className="input" placeholder="e.g. Intel Core i7" value={form.cpu || ''} onChange={(e) => setForm({ ...form, cpu: e.target.value })} />
-                  </Field>
-                  <Field label="RAM Memory (Total)">
-                    <input className="input" placeholder="e.g. 16 GB" value={form.ram || ''} onChange={(e) => setForm({ ...form, ram: e.target.value })} />
-                  </Field>
-                  <Field label="Hard Drive (Storage)">
-                    <input className="input" placeholder="e.g. 512GB NVMe SSD" value={form.storage || ''} onChange={(e) => setForm({ ...form, storage: e.target.value })} />
-                  </Field>
-                  <Field label="GPU Card Model">
-                    <input className="input" placeholder="e.g. RTX 4060" value={form.gpu || ''} onChange={(e) => setForm({ ...form, gpu: e.target.value })} />
-                  </Field>
-                  <Field label="OS Edition">
-                    <input className="input" placeholder="e.g. Windows 11 Pro" value={form.windowsEdition || ''} onChange={(e) => setForm({ ...form, windowsEdition: e.target.value })} />
-                  </Field>
-                  <Field label="Computer Name">
-                    <input className="input" placeholder="e.g. NPL-LAP-001" value={form.computerName || ''} onChange={(e) => setForm({ ...form, computerName: e.target.value })} />
-                  </Field>
-                  <Field label="Domain / Active Directory">
-                    <input className="input" placeholder="e.g. nationwide.local" value={form.domainName || ''} onChange={(e) => setForm({ ...form, domainName: e.target.value })} />
-                  </Field>
-                  <Field label="BitLocker Status">
-                    <Select value={form.bitLockerStatus} onChange={(v) => setForm({ ...form, bitLockerStatus: v })} options={[{ value: 'Enabled', label: 'Enabled' }, { value: 'Disabled', label: 'Disabled' }]} />
-                  </Field>
-                  <Field label="TPM Version">
-                    <input className="input" placeholder="e.g. 2.0" value={form.tpmVersion || ''} onChange={(e) => setForm({ ...form, tpmVersion: e.target.value })} />
-                  </Field>
-                  <Field label="BitLocker Recovery Key">
-                    <input className="input" placeholder="e.g. 48-digit key" value={form.recoveryKey || ''} onChange={(e) => setForm({ ...form, recoveryKey: e.target.value })} />
-                  </Field>
-                </>
-              )}
+          {/* SECTION 2: SPECS & CMDB CONFIG */}
+          {['Laptop', 'Desktop', 'Monitor', 'Printer', 'Mobile Phone', 'Mobile', 'Tablet'].includes(form.category) && (
+            <div className="space-y-3">
+              <h4 className="font-extrabold text-indigo-900 border-b border-indigo-50 pb-1 text-2xs uppercase tracking-wider">2. Specifications & Configuration</h4>
+              <div className="grid gap-3 md:grid-cols-2">
+                {['Laptop', 'Desktop'].includes(form.category) && (
+                  <>
+                    <Field label="CPU Configuration">
+                      <input className="input" placeholder="e.g. Intel Core i7" value={form.cpu || ''} onChange={(e) => setForm({ ...form, cpu: e.target.value })} />
+                    </Field>
+                    <Field label="RAM Memory (Total)">
+                      <input className="input" placeholder="e.g. 16 GB" value={form.ram || ''} onChange={(e) => setForm({ ...form, ram: e.target.value })} />
+                    </Field>
+                    <Field label="Hard Drive (Storage)">
+                      <input className="input" placeholder="e.g. 512GB NVMe SSD" value={form.storage || ''} onChange={(e) => setForm({ ...form, storage: e.target.value })} />
+                    </Field>
+                    <Field label="GPU Card Model">
+                      <input className="input" placeholder="e.g. RTX 4060" value={form.gpu || ''} onChange={(e) => setForm({ ...form, gpu: e.target.value })} />
+                    </Field>
+                    <Field label="OS Edition">
+                      <input className="input" placeholder="e.g. Windows 11 Pro" value={form.windowsEdition || ''} onChange={(e) => setForm({ ...form, windowsEdition: e.target.value })} />
+                    </Field>
+                    <Field label="Computer Name">
+                      <input className="input" placeholder="e.g. NPL-LAP-001" value={form.computerName || ''} onChange={(e) => setForm({ ...form, computerName: e.target.value })} />
+                    </Field>
+                    <Field label="Domain / Active Directory">
+                      <input className="input" placeholder="e.g. nationwide.local" value={form.domainName || ''} onChange={(e) => setForm({ ...form, domainName: e.target.value })} />
+                    </Field>
+                    <Field label="BitLocker Status">
+                      <Select value={form.bitLockerStatus} onChange={(v) => setForm({ ...form, bitLockerStatus: v })} options={[{ value: 'Enabled', label: 'Enabled' }, { value: 'Disabled', label: 'Disabled' }]} />
+                    </Field>
+                    <Field label="TPM Version">
+                      <input className="input" placeholder="e.g. 2.0" value={form.tpmVersion || ''} onChange={(e) => setForm({ ...form, tpmVersion: e.target.value })} />
+                    </Field>
+                    <Field label="BitLocker Recovery Key">
+                      <input className="input" placeholder="e.g. 48-digit key" value={form.recoveryKey || ''} onChange={(e) => setForm({ ...form, recoveryKey: e.target.value })} />
+                    </Field>
+                  </>
+                )}
 
-              {form.category === 'Monitor' && (
-                <>
-                  <Field label="Screen Size">
-                    <input className="input" placeholder='e.g. 27"' value={form.screenSize || ''} onChange={(e) => setForm({ ...form, screenSize: e.target.value })} />
-                  </Field>
-                  <Field label="Resolution">
-                    <input className="input" placeholder="e.g. 2560x1440" value={form.resolution || ''} onChange={(e) => setForm({ ...form, resolution: e.target.value })} />
-                  </Field>
-                  <Field label="Refresh Rate">
-                    <input className="input" placeholder="e.g. 144Hz" value={form.refreshRate || ''} onChange={(e) => setForm({ ...form, refreshRate: e.target.value })} />
-                  </Field>
-                  <Field label="Panel Type">
-                    <input className="input" placeholder="e.g. IPS" value={form.panelType || ''} onChange={(e) => setForm({ ...form, panelType: e.target.value })} />
-                  </Field>
-                </>
-              )}
+                {form.category === 'Monitor' && (
+                  <>
+                    <Field label="Screen Size">
+                      <input className="input" placeholder='e.g. 27"' value={form.screenSize || ''} onChange={(e) => setForm({ ...form, screenSize: e.target.value })} />
+                    </Field>
+                    <Field label="Resolution">
+                      <input className="input" placeholder="e.g. 2560x1440" value={form.resolution || ''} onChange={(e) => setForm({ ...form, resolution: e.target.value })} />
+                    </Field>
+                    <Field label="Refresh Rate">
+                      <input className="input" placeholder="e.g. 144Hz" value={form.refreshRate || ''} onChange={(e) => setForm({ ...form, refreshRate: e.target.value })} />
+                    </Field>
+                    <Field label="Panel Type">
+                      <input className="input" placeholder="e.g. IPS" value={form.panelType || ''} onChange={(e) => setForm({ ...form, panelType: e.target.value })} />
+                    </Field>
+                  </>
+                )}
 
-              {form.category === 'Printer' && (
-                <>
-                  <Field label="Toner Model">
-                    <input className="input" placeholder="e.g. CF258A" value={form.tonerModel || ''} onChange={(e) => setForm({ ...form, tonerModel: e.target.value })} />
-                  </Field>
-                  <Field label="Drum Model">
-                    <input className="input" placeholder="e.g. CF258X" value={form.drumModel || ''} onChange={(e) => setForm({ ...form, drumModel: e.target.value })} />
-                  </Field>
-                  <Field label="Current Page Counter">
-                    <input className="input" type="number" value={form.currentPageCount || 0} onChange={(e) => setForm({ ...form, currentPageCount: Number(e.target.value) })} />
-                  </Field>
-                </>
-              )}
+                {form.category === 'Printer' && (
+                  <>
+                    <Field label="Toner Model">
+                      <input className="input" placeholder="e.g. CF258A" value={form.tonerModel || ''} onChange={(e) => setForm({ ...form, tonerModel: e.target.value })} />
+                    </Field>
+                    <Field label="Drum Model">
+                      <input className="input" placeholder="e.g. CF258X" value={form.drumModel || ''} onChange={(e) => setForm({ ...form, drumModel: e.target.value })} />
+                    </Field>
+                    <Field label="Current Page Counter">
+                      <input className="input" type="number" value={form.currentPageCount || 0} onChange={(e) => setForm({ ...form, currentPageCount: Number(e.target.value) })} />
+                    </Field>
+                  </>
+                )}
 
-              {['Mobile Phone', 'Mobile', 'Tablet'].includes(form.category) && (
-                <>
-                  <Field label="IMEI Number 2">
-                    <input className="input" value={form.imeiNumber2 || ''} onChange={(e) => setForm({ ...form, imeiNumber2: e.target.value })} />
-                  </Field>
-                  <Field label="Mobile Carrier">
-                    <input className="input" placeholder="e.g. Vodafone" value={form.carrier || ''} onChange={(e) => setForm({ ...form, carrier: e.target.value })} />
-                  </Field>
-                  <Field label="MDM Configuration Status">
-                    <Select value={form.mdmStatus} onChange={(v) => setForm({ ...form, mdmStatus: v })} options={[{ value: 'Configured', label: 'Intune MDM Active' }, { value: 'None', label: 'Unmanaged' }]} />
-                  </Field>
-                </>
-              )}
+                {['Mobile Phone', 'Mobile', 'Tablet'].includes(form.category) && (
+                  <>
+                    <Field label="IMEI Number 2">
+                      <input className="input" value={form.imeiNumber2 || ''} onChange={(e) => setForm({ ...form, imeiNumber2: e.target.value })} />
+                    </Field>
+                    <Field label="Mobile Carrier">
+                      <input className="input" placeholder="e.g. Vodafone" value={form.carrier || ''} onChange={(e) => setForm({ ...form, carrier: e.target.value })} />
+                    </Field>
+                    <Field label="MDM Configuration Status">
+                      <Select value={form.mdmStatus} onChange={(v) => setForm({ ...form, mdmStatus: v })} options={[{ value: 'Configured', label: 'Intune MDM Active' }, { value: 'None', label: 'Unmanaged' }]} />
+                    </Field>
+                  </>
+                )}
+              </div>
             </div>
           )}
 
-          {/* TAB 3: PURCHASE & WARRANTY */}
-          {formTab === 'purchase' && (
+          {/* SECTION 3: PURCHASE & WARRANTY */}
+          <div className="space-y-3">
+            <h4 className="font-extrabold text-indigo-900 border-b border-indigo-50 pb-1 text-2xs uppercase tracking-wider">3. Purchase & Warranty Details</h4>
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="Purchase Order (PO) Number">
                 <input className="input" value={form.purchaseOrderNumber || ''} onChange={(e) => setForm({ ...form, purchaseOrderNumber: e.target.value })} />
@@ -376,31 +397,20 @@ export default function AssetCategoryList({ type }) {
                 <input className="input" type="date" value={form.amcExpiryDate || ''} onChange={(e) => setForm({ ...form, amcExpiryDate: e.target.value })} />
               </Field>
             </div>
-          )}
+          </div>
 
-          {/* TAB 4: NETWORK / LOCATION DETAILS */}
-          {formTab === 'network' && (
+          {/* SECTION 4: NETWORK & LOCATION DETAILS */}
+          <div className="space-y-3">
+            <h4 className="font-extrabold text-indigo-900 border-b border-indigo-50 pb-1 text-2xs uppercase tracking-wider">4. Network & Location Details</h4>
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="LAN WAN IP Address">
                 <input className="input" placeholder="e.g. 192.168.1.100" value={form.wanIp || ''} onChange={(e) => setForm({ ...form, wanIp: e.target.value })} />
               </Field>
-              <Field label="Active Ports Count">
-                <input className="input" type="number" placeholder="24" value={form.portsCount || ''} onChange={(e) => setForm({ ...form, portsCount: e.target.value })} />
-              </Field>
-              <Field label="ISP Connection Name">
-                <input className="input" placeholder="e.g. LeaseLine" value={form.ispName || ''} onChange={(e) => setForm({ ...form, ispName: e.target.value })} />
-              </Field>
-              <Field label="Office Floor">
-                <input className="input" placeholder="Floor 2" value={form.floor || ''} onChange={(e) => setForm({ ...form, floor: e.target.value })} />
-              </Field>
-              <Field label="Cabin Room Code">
-                <input className="input" placeholder="Cabin 204" value={form.cabin || ''} onChange={(e) => setForm({ ...form, cabin: e.target.value })} />
-              </Field>
-              <Field label="Server Rack Number">
-                <input className="input" placeholder="Rack 02" value={form.rackNumber || ''} onChange={(e) => setForm({ ...form, rackNumber: e.target.value })} />
+              <Field label="MAC Address / ID">
+                <input className="input" placeholder="e.g. 00:1A:2B:3C:4D:5E" value={form.wifiMac || ''} onChange={(e) => setForm({ ...form, wifiMac: e.target.value })} />
               </Field>
             </div>
-          )}
+          </div>
 
           <div className="flex justify-end gap-2 border-t border-gray-100 pt-4 mt-6">
             <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>Cancel</button>

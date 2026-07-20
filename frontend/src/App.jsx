@@ -13,6 +13,7 @@ import Licenses from './pages/Licenses.jsx';
 import Users from './pages/Users.jsx';
 import AuditLog from './pages/AuditLog.jsx';
 import ImportAssets from './pages/ImportAssets.jsx';
+import ImportProfiles from './pages/ImportProfiles.jsx';
 import ITSMDashboard from './pages/ITSMDashboard.jsx';
 import UserAssetProfiles from './pages/UserAssetProfiles.jsx';
 import UserAssetProfileDetail from './pages/UserAssetProfileDetail.jsx';
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="/vendors" element={<Protected><Vendors /></Protected>} />
 
         <Route path="/user-profiles" element={<Protected action="viewInventory"><UserAssetProfiles /></Protected>} />
+        <Route path="/user-profiles/import" element={<Protected action="manageInventory"><ImportProfiles /></Protected>} />
         <Route path="/user-profiles/:id" element={<Protected action="viewInventory"><UserAssetProfileDetail /></Protected>} />
         
         {/* Granular category inventory list endpoints */}

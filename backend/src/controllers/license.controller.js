@@ -17,7 +17,16 @@ async function list(req, res) {
         vendor: { select: { id: true, name: true } },
         assignments: {
           where: { revokedAt: null },
-          select: { id: true }
+          select: {
+            id: true,
+            userId: true,
+            user: {
+              select: {
+                id: true,
+                email: true
+              }
+            }
+          }
         }
       },
       orderBy: { name: 'asc' }
@@ -65,7 +74,7 @@ async function get(req, res) {
 }
 
 async function create(req, res) {
-  const { name, type, vendorId, licenseKey, totalSeats, purchaseDate, expiryDate, costPerSeat, notes, currency } = req.body;
+  const { name, type, vendorId, licenseKey, totalSeats, purchaseDate, expiryDate, costPerSeat, notes, currency, taxRate } = req.body;
   if (!name || !type) {
     return res.status(400).json({ error: 'Name and Type are required fields.' });
   }
@@ -73,7 +82,8 @@ async function create(req, res) {
   try {
     const seats = totalSeats ? Number(totalSeats) : 1;
     const perSeatCost = costPerSeat ? Number(costPerSeat) : 0;
-    const totalCost = seats * perSeatCost;
+    const tax = taxRate ? Number(taxRate) : 0;
+    const totalCost = seats * perSeatCost * (1 + tax / 100);
 
     const newLicense = await prisma.license.create({
       data: {
@@ -87,7 +97,8 @@ async function create(req, res) {
         costPerSeat: perSeatCost,
         totalCost,
         notes: notes || null,
-        currency: currency || 'GBP'
+        currency: currency || 'GBP',
+        taxRate: tax
       }
     });
 
@@ -99,12 +110,13 @@ async function create(req, res) {
 
 async function update(req, res) {
   const { id } = req.params;
-  const { name, type, vendorId, licenseKey, totalSeats, purchaseDate, expiryDate, costPerSeat, notes, currency } = req.body;
+  const { name, type, vendorId, licenseKey, totalSeats, purchaseDate, expiryDate, costPerSeat, notes, currency, taxRate } = req.body;
 
   try {
     const seats = totalSeats ? Number(totalSeats) : 1;
     const perSeatCost = costPerSeat ? Number(costPerSeat) : 0;
-    const totalCost = seats * perSeatCost;
+    const tax = taxRate ? Number(taxRate) : 0;
+    const totalCost = seats * perSeatCost * (1 + tax / 100);
 
     const updated = await prisma.license.update({
       where: { id: Number(id) },
@@ -119,7 +131,8 @@ async function update(req, res) {
         costPerSeat: perSeatCost,
         totalCost,
         notes: notes || null,
-        currency: currency || 'GBP'
+        currency: currency || 'GBP',
+        taxRate: tax
       }
     });
 

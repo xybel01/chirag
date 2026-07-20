@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { getCollectionItems, runFirestoreBatch } from '../utils/firebase.js';
+import { getCollectionItems, setCollectionDoc, runFirestoreBatch } from '../utils/firebase.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
 import { Field, Select } from '../components/FormField.jsx';
 import api from '../api/client';
+import { syncSingleAssetToFirestore } from '../utils/sync.js';
 import { fmtMoney, fmtDate } from '../utils/format.js';
 
 export default function UserAssetProfileDetail() {
@@ -39,6 +40,34 @@ export default function UserAssetProfileDetail() {
   // Transfer Asset form states
   const [transferTargetUserId, setTransferTargetUserId] = useState('');
   const [transferReason, setTransferReason] = useState('');
+
+  // Edit Profile modal & form states
+  const [editProfileModal, setEditProfileModal] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    employeeName: '',
+    employeeId: '',
+    email: '',
+    department: '',
+    companyName: '',
+    location: '',
+    designation: '',
+    mobileNumber: '',
+    employmentStatus: 'ACTIVE'
+  });
+  const [profileError, setProfileError] = useState('');
+
+  // Assign Asset direct modal states
+  const [assignModal, setAssignModal] = useState(false);
+  const [availableAssets, setAvailableAssets] = useState([]);
+  const [selectedAssignAssetId, setSelectedAssignAssetId] = useState('');
+  const [assignNotes, setAssignNotes] = useState('');
+  const [assignModalTitle, setAssignModalTitle] = useState('Assign Asset');
+
+  // Assign License modal states
+  const [assignLicenseModal, setAssignLicenseModal] = useState(false);
+  const [availableLicenses, setAvailableLicenses] = useState([]);
+  const [selectedLicenseId, setSelectedLicenseId] = useState('');
+  const [ackFormModal, setAckFormModal] = useState(false);
 
   // Busy/Save state
   const [busy, setBusy] = useState(false);
@@ -76,12 +105,17 @@ export default function UserAssetProfileDetail() {
 
       try {
         const licensesRes = await api.get('/licenses', { params: { pageSize: 100 } });
-        const userLicenses = (licensesRes.data?.items || []).filter(l =>
-          l.assignments?.some(a => String(a.userId) === String(id) || String(a.user?.id) === String(id))
+        const licensesList = Array.isArray(licensesRes.data) ? licensesRes.data : (licensesRes.data?.items || []);
+        const userLicenses = licensesList.filter(l =>
+          l.assignments?.some(a => 
+            a.user?.email?.toLowerCase() === foundProfile.email?.toLowerCase() ||
+            String(a.userId) === String(foundProfile.id) ||
+            String(a.user?.id) === String(foundProfile.id)
+          )
         );
         setProfileLicenses(userLicenses);
       } catch (err) {
-        console.warn('Backend server is offline or mock licenses empty. Skipping licenses fetch.');
+        console.warn('Backend server is offline or mock licenses empty. Skipping licenses fetch.', err);
       }
 
       // Pre-initialize return conditions
@@ -123,30 +157,30 @@ export default function UserAssetProfileDetail() {
     setBusy(true);
     setError('');
     try {
-      const operations = [];
-      const returnDateStr = new Date().toISOString();
+      const pgUser = await getOrCreatePgUser(profile.email, profile.employeeName);
 
-      assignedAssets.forEach((asset) => {
+      for (const asset of assignedAssets) {
         const cond = returnConditions[asset.id] || 'Good';
 
-        // 1. Update Asset to AVAILABLE
-        const updatedAsset = {
-          ...asset,
-          status: 'AVAILABLE',
-          assignedUserId: null,
-          assignedUserName: null,
-          assignmentId: null,
-          condition: cond,
-        };
+        // Find pgAsset
+        const assetRes = await api.get('/assets', { params: { search: asset.serialNumber } });
+        const pgAsset = assetRes.data.items?.find(a => a.serialNumber === asset.serialNumber);
 
-        operations.push({
-          type: 'SET',
-          collectionName: 'assets',
-          docId: asset.id,
-          data: updatedAsset,
-        });
+        if (pgAsset) {
+          // 1. Post return assignment to PostgreSQL
+          await api.post('/assignments', {
+            assetId: pgAsset.id,
+            userId: pgUser.id,
+            action: 'RETURN',
+            notes: `Returned condition: ${cond}. Notes: ${returnNotes || 'None'}`,
+          });
 
-        // 2. Log History
+          // 2. Sync to Firestore
+          const latestAssetRes = await api.get(`/assets/${pgAsset.id}`);
+          await syncSingleAssetToFirestore(latestAssetRes.data);
+        }
+
+        // 3. Log History in Firestore
         const historyId = `hist-ret-${asset.id}-${Date.now()}`;
         const historyLog = {
           assetId: asset.assetId,
@@ -156,31 +190,12 @@ export default function UserAssetProfileDetail() {
           previousStatus: 'ASSIGNED',
           newStatus: 'AVAILABLE',
           performedBy: currentUser?.displayName || 'IT Support',
-          performedAt: returnDateStr,
+          performedAt: new Date().toISOString(),
           notes: `Returned condition: ${cond}. Notes: ${returnNotes || 'None'}`,
         };
+        await setCollectionDoc('assetHistory', historyId, historyLog);
+      }
 
-        operations.push({
-          type: 'SET',
-          collectionName: 'assetHistory',
-          docId: historyId,
-          data: historyLog,
-        });
-      });
-
-      // Update employee status in mock to cleared
-      const updatedUser = {
-        ...profile,
-        employmentStatus: 'ACTIVE', // Or cleared flag
-      };
-      operations.push({
-        type: 'SET',
-        collectionName: 'users',
-        docId: profile.id,
-        data: updatedUser,
-      });
-
-      await runFirestoreBatch(operations);
       setReturnAllModal(false);
       setReturnNotes('');
       await loadProfileData();
@@ -201,76 +216,70 @@ export default function UserAssetProfileDetail() {
     setError('');
 
     try {
-      const operations = [];
-      const dateStr = new Date().toISOString();
+      const pgUser = await getOrCreatePgUser(profile.email, profile.employeeName);
+
       const oldAsset = selectedAssetForAction;
       const newAsset = allAssets.find((a) => String(a.id) === String(replacementAssetId));
 
-      // 1. Return old asset (make AVAILABLE)
-      operations.push({
-        type: 'SET',
-        collectionName: 'assets',
-        docId: oldAsset.id,
-        data: {
-          ...oldAsset,
-          status: 'AVAILABLE',
-          assignedUserId: null,
-          assignedUserName: null,
-          assignmentId: null,
-        },
-      });
+      // Find pgOldAsset
+      const oldAssetRes = await api.get('/assets', { params: { search: oldAsset.serialNumber } });
+      const pgOldAsset = oldAssetRes.data.items?.find(a => a.serialNumber === oldAsset.serialNumber);
 
-      // Log Return history
-      operations.push({
-        type: 'SET',
-        collectionName: 'assetHistory',
-        docId: `hist-rep-ret-${oldAsset.id}-${Date.now()}`,
-        data: {
-          assetId: oldAsset.assetId,
-          userId: id,
-          assignmentId: oldAsset.assignmentId || 'unknown',
+      // Find pgNewAsset
+      const newAssetRes = await api.get('/assets', { params: { search: newAsset.serialNumber } });
+      const pgNewAsset = newAssetRes.data.items?.find(a => a.serialNumber === newAsset.serialNumber);
+
+      if (pgOldAsset && pgNewAsset) {
+        // 1. Return old asset in postgres
+        await api.post('/assignments', {
+          assetId: pgOldAsset.id,
+          userId: pgUser.id,
           action: 'RETURN',
-          previousStatus: 'ASSIGNED',
-          newStatus: 'AVAILABLE',
-          performedBy: currentUser?.displayName || 'IT Manager',
-          performedAt: dateStr,
           notes: `Replaced by ${newAsset.assetId}. Reason: ${replaceReason || 'Replacement request'}`,
-        },
-      });
+        });
 
-      // 2. Assign new asset to this user
-      operations.push({
-        type: 'SET',
-        collectionName: 'assets',
-        docId: newAsset.id,
-        data: {
-          ...newAsset,
-          status: 'ASSIGNED',
-          assignedUserId: id,
-          assignedUserName: profile.employeeName,
-          assignmentId: `rep-asn-${Date.now()}`,
-        },
-      });
-
-      // Log Assign history
-      operations.push({
-        type: 'SET',
-        collectionName: 'assetHistory',
-        docId: `hist-rep-asn-${newAsset.id}-${Date.now()}`,
-        data: {
-          assetId: newAsset.assetId,
-          userId: id,
-          assignmentId: `rep-asn-${Date.now()}`,
+        // 2. Assign new asset in postgres
+        await api.post('/assignments', {
+          assetId: pgNewAsset.id,
+          userId: pgUser.id,
           action: 'ASSIGN',
-          previousStatus: 'AVAILABLE',
-          newStatus: 'ASSIGNED',
-          performedBy: currentUser?.displayName || 'IT Manager',
-          performedAt: dateStr,
           notes: `Replacement upgrade. Replaced old asset ${oldAsset.assetId}. Reason: ${replaceReason || 'Upgrade'}`,
-        },
+        });
+
+        // Sync both to firestore
+        const latestOld = await api.get(`/assets/${pgOldAsset.id}`);
+        await syncSingleAssetToFirestore(latestOld.data);
+
+        const latestNew = await api.get(`/assets/${pgNewAsset.id}`);
+        await syncSingleAssetToFirestore(latestNew.data);
+      }
+
+      // Log Return history in Firestore
+      await setCollectionDoc('assetHistory', `hist-rep-ret-${oldAsset.id}-${Date.now()}`, {
+        assetId: oldAsset.assetId,
+        userId: id,
+        assignmentId: oldAsset.assignmentId || 'unknown',
+        action: 'RETURN',
+        previousStatus: 'ASSIGNED',
+        newStatus: 'AVAILABLE',
+        performedBy: currentUser?.displayName || 'IT Manager',
+        performedAt: new Date().toISOString(),
+        notes: `Replaced by ${newAsset.assetId}. Reason: ${replaceReason || 'Replacement request'}`,
       });
 
-      await runFirestoreBatch(operations);
+      // Log Assign history in Firestore
+      await setCollectionDoc('assetHistory', `hist-rep-asn-${newAsset.id}-${Date.now()}`, {
+        assetId: newAsset.assetId,
+        userId: id,
+        assignmentId: `rep-asn-${Date.now()}`,
+        action: 'ASSIGN',
+        previousStatus: 'AVAILABLE',
+        newStatus: 'ASSIGNED',
+        performedBy: currentUser?.displayName || 'IT Manager',
+        performedAt: new Date().toISOString(),
+        notes: `Replacement upgrade. Replaced old asset ${oldAsset.assetId}. Reason: ${replaceReason || 'Upgrade'}`,
+      });
+
       setReplaceModal(false);
       setReplacementAssetId('');
       setReplaceReason('');
@@ -292,62 +301,56 @@ export default function UserAssetProfileDetail() {
     setError('');
 
     try {
-      const operations = [];
-      const dateStr = new Date().toISOString();
       const asset = selectedAssetForAction;
       const targetUser = allUsers.find((u) => String(u.id) === String(transferTargetUserId));
 
-      // 1. Log transfer details in history of the CURRENT user
-      operations.push({
-        type: 'SET',
-        collectionName: 'assetHistory',
-        docId: `hist-trsf-out-${asset.id}-${Date.now()}`,
-        data: {
-          assetId: asset.assetId,
-          userId: id, // current user ID
-          assignmentId: asset.assignmentId || 'unknown',
-          action: 'TRANSFER_OUT',
-          previousStatus: 'ASSIGNED',
-          newStatus: 'AVAILABLE',
-          performedBy: currentUser?.displayName || 'IT Manager',
-          performedAt: dateStr,
-          notes: `Transferred to ${targetUser.employeeName} (${targetUser.email}). Reason: ${transferReason || 'Transfer request'}`,
-        },
+      const pgUserFrom = await getOrCreatePgUser(profile.email, profile.employeeName);
+      const pgUserTo = await getOrCreatePgUser(targetUser.email, targetUser.employeeName);
+
+      // Find pgAsset
+      const assetRes = await api.get('/assets', { params: { search: asset.serialNumber } });
+      const pgAsset = assetRes.data.items?.find(a => a.serialNumber === asset.serialNumber);
+
+      if (pgAsset) {
+        // Post transfer in postgres
+        await api.post('/assignments', {
+          assetId: pgAsset.id,
+          userId: pgUserTo.id,
+          action: 'TRANSFER',
+          notes: transferReason || 'Transfer request',
+        });
+
+        // Sync to firestore
+        const latestAssetRes = await api.get(`/assets/${pgAsset.id}`);
+        await syncSingleAssetToFirestore(latestAssetRes.data);
+      }
+
+      // Log transfer out on current user in Firestore
+      await setCollectionDoc('assetHistory', `hist-trsf-out-${asset.id}-${Date.now()}`, {
+        assetId: asset.assetId,
+        userId: id,
+        assignmentId: asset.assignmentId || 'unknown',
+        action: 'TRANSFER_OUT',
+        previousStatus: 'ASSIGNED',
+        newStatus: 'AVAILABLE',
+        performedBy: currentUser?.displayName || 'IT Manager',
+        performedAt: new Date().toISOString(),
+        notes: `Transferred to ${targetUser.employeeName} (${targetUser.email}). Reason: ${transferReason || 'Transfer request'}`,
       });
 
-      // 2. Re-assign asset to the NEW user
-      operations.push({
-        type: 'SET',
-        collectionName: 'assets',
-        docId: asset.id,
-        data: {
-          ...asset,
-          status: 'ASSIGNED',
-          assignedUserId: targetUser.id,
-          assignedUserName: targetUser.employeeName,
-          assignmentId: `trsf-asn-${Date.now()}`,
-        },
+      // Log transfer in on target user in Firestore
+      await setCollectionDoc('assetHistory', `hist-trsf-in-${asset.id}-${Date.now()}`, {
+        assetId: asset.assetId,
+        userId: targetUser.id,
+        assignmentId: `trsf-asn-${Date.now()}`,
+        action: 'ASSIGN',
+        previousStatus: 'AVAILABLE',
+        newStatus: 'ASSIGNED',
+        performedBy: currentUser?.displayName || 'IT Manager',
+        performedAt: new Date().toISOString(),
+        notes: `Transferred from ${profile.employeeName} (${profile.email}). Reason: ${transferReason || 'Transfer request'}`,
       });
 
-      // 3. Log history on target user
-      operations.push({
-        type: 'SET',
-        collectionName: 'assetHistory',
-        docId: `hist-trsf-in-${asset.id}-${Date.now()}`,
-        data: {
-          assetId: asset.assetId,
-          userId: targetUser.id, // target user ID
-          assignmentId: `trsf-asn-${Date.now()}`,
-          action: 'ASSIGN',
-          previousStatus: 'AVAILABLE',
-          newStatus: 'ASSIGNED',
-          performedBy: currentUser?.displayName || 'IT Manager',
-          performedAt: dateStr,
-          notes: `Transferred from ${profile.employeeName} (${profile.email}). Reason: ${transferReason || 'Transfer request'}`,
-        },
-      });
-
-      await runFirestoreBatch(operations);
       setTransferModal(false);
       setTransferTargetUserId('');
       setTransferReason('');
@@ -361,7 +364,164 @@ export default function UserAssetProfileDetail() {
 
   // Generate Acknowledgement / Send Email alerts
   const handleAcknowledgeMock = (actionName) => {
-    alert(`Success: ${actionName} transaction generated and registered for ${profile.employeeName}!`);
+    if (actionName === 'Acknowledgement Form') {
+      setAckFormModal(true);
+    } else {
+      alert(`Success: ${actionName} transaction generated and registered for ${profile.employeeName}!`);
+    }
+  };
+
+  const openEditProfile = () => {
+    setProfileForm({
+      employeeName: profile.employeeName || '',
+      employeeId: profile.employeeId || '',
+      email: profile.email || '',
+      department: profile.department || '',
+      companyName: profile.companyName || '',
+      location: profile.location || '',
+      designation: profile.designation || '',
+      mobileNumber: profile.mobileNumber || '',
+      employmentStatus: profile.employmentStatus || 'ACTIVE'
+    });
+    setProfileError('');
+    setEditProfileModal(true);
+  };
+
+  const handleSaveProfile = async (e) => {
+    e.preventDefault();
+    setProfileError('');
+    try {
+      await setCollectionDoc('users', id, profileForm);
+      setEditProfileModal(false);
+      await loadProfileData();
+    } catch (err) {
+      setProfileError(err.message || 'Failed to save profile details.');
+    }
+  };
+
+  const getOrCreatePgUser = async (email, name) => {
+    const res = await api.get('/users', { params: { search: email } });
+    let pgUser = res.data.items?.find((u) => u.email.toLowerCase() === email.toLowerCase());
+    if (!pgUser) {
+      const createRes = await api.post('/users', {
+        name: name,
+        email: email,
+        role: 'EMPLOYEE',
+        isActive: true,
+      });
+      pgUser = createRes.data;
+    }
+    return pgUser;
+  };
+
+  const openAssignModal = async (categoryFilter = null, customTitle = 'Asset', isOther = false) => {
+    setBusy(true);
+    setError('');
+    setAssignModalTitle(`Assign ${customTitle} to ${profile.employeeName}`);
+    try {
+      const res = await api.get('/assets', { params: { status: 'AVAILABLE', pageSize: 1000 } });
+      let items = res.data.items || [];
+      if (categoryFilter) {
+        items = items.filter(a => categoryFilter.includes(a.category?.name));
+      } else if (isOther) {
+        const predefined = ['Laptop', 'Desktop', 'Monitor', 'Keyboard', 'Mouse', 'Headphone', 'Wi-Fi Adapter', 'Bluetooth Adapter', 'Mobile Phone', 'Laptop Charger', 'Mobile Charger', 'Printer'];
+        items = items.filter(a => !predefined.includes(a.category?.name));
+      }
+      setAvailableAssets(items);
+      setAssignNotes('');
+      setSelectedAssignAssetId('');
+      setAssignModal(true);
+    } catch (err) {
+      setError('Failed to fetch available assets: ' + err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const openAssignLicenseModal = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await api.get('/licenses', { params: { pageSize: 100 } });
+      const list = Array.isArray(res.data) ? res.data : (res.data?.items || []);
+      setAvailableLicenses(list);
+      setSelectedLicenseId('');
+      setAssignLicenseModal(true);
+    } catch (err) {
+      setError('Failed to fetch licenses: ' + err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAssignLicenseSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedLicenseId) {
+      setError('Please select a license to allocate.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const pgUser = await getOrCreatePgUser(profile.email, profile.employeeName);
+      await api.post(`/licenses/${selectedLicenseId}/assign`, { userId: pgUser.id });
+      setAssignLicenseModal(false);
+      setSelectedLicenseId('');
+      await loadProfileData();
+    } catch (err) {
+      setError(`Failed to allocate license: ${err.message || err}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleRevokeLicense = async (licenseId) => {
+    if (!window.confirm('Are you sure you want to revoke this software license assignment?')) return;
+    setBusy(true);
+    setError('');
+    try {
+      const pgUser = await getOrCreatePgUser(profile.email, profile.employeeName);
+      await api.post(`/licenses/${licenseId}/revoke`, { userId: pgUser.id });
+      await loadProfileData();
+    } catch (err) {
+      setError(`Failed to revoke license: ${err.message}`);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAssignAssetDirect = async () => {
+    if (!selectedAssignAssetId) {
+      setError('Please select an asset to assign.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const pgUser = await getOrCreatePgUser(profile.email, profile.employeeName);
+      const pgAsset = availableAssets.find((a) => String(a.id) === String(selectedAssignAssetId));
+      if (!pgAsset) throw new Error('Asset not found.');
+
+      await api.post('/assignments', {
+        assetId: pgAsset.id,
+        userId: pgUser.id,
+        action: 'ASSIGN',
+        notes: assignNotes || 'Assigned directly from User Profile details page.',
+      });
+
+      // Get latest asset state from postgres
+      const assetRes = await api.get(`/assets/${pgAsset.id}`);
+      await syncSingleAssetToFirestore(assetRes.data);
+
+      setAssignModal(false);
+      setSelectedAssignAssetId('');
+      setAssignNotes('');
+      await loadProfileData();
+    } catch (err) {
+      setError(`Failed to assign asset: ${err.message || err}`);
+    } finally {
+      setBusy(false);
+    }
   };
 
   // Status Color Helper
@@ -398,7 +558,7 @@ export default function UserAssetProfileDetail() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-1.5 pt-3 border-t border-gray-50">
+      <div className="grid grid-cols-2 gap-1.5 pt-3 border-t border-gray-50 print:hidden">
         <button
           onClick={() => {
             setSelectedAssetForAction(asset);
@@ -443,8 +603,11 @@ export default function UserAssetProfileDetail() {
             <button className="btn-secondary" onClick={() => navigate('/user-profiles')}>
               Back to Profiles
             </button>
-            <button className="btn-primary" onClick={() => navigate(`/assets/assign?userId=${id}`)}>
-              Assign More Assets
+            <button className="btn-secondary text-brand-700 bg-brand-50 border-brand-200" onClick={openEditProfile}>
+              Edit Profile
+            </button>
+            <button className="btn-primary" onClick={openAssignModal}>
+              Assign Asset
             </button>
             {assignedAssets.length > 0 && (
               <button className="btn-danger" onClick={() => {
@@ -497,7 +660,7 @@ export default function UserAssetProfileDetail() {
       </div>
 
       {/* Custom Action Utilities */}
-      <div className="flex flex-wrap gap-2.5">
+      <div className="flex flex-wrap gap-2.5 print:hidden">
         <button onClick={() => handleAcknowledgeMock('Acknowledgement Form')} className="px-3.5 py-1.5 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-xl hover:bg-indigo-100">
           📄 Generate Acknowledgement Form
         </button>
@@ -513,7 +676,15 @@ export default function UserAssetProfileDetail() {
       <div className="space-y-6">
         {/* Category: Computers */}
         <div className="space-y-3">
-          <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider border-b border-gray-100 pb-1">1. Computers & Terminals</h3>
+          <div className="flex justify-between items-center border-b border-gray-100 pb-1">
+            <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider">1. Computers & Terminals</h3>
+            <button
+              onClick={() => openAssignModal(['Laptop', 'Desktop'], 'Computer / Terminal')}
+              className="text-indigo-650 hover:text-indigo-800 text-2xs font-extrabold flex items-center gap-1 print:hidden"
+            >
+              ➕ Assign Computer
+            </button>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
             {categorize(['Laptop', 'Desktop']).map(renderAssetCard)}
             {categorize(['Laptop', 'Desktop']).length === 0 && <span className="text-gray-400 text-xs col-span-4">No computers assigned.</span>}
@@ -522,7 +693,15 @@ export default function UserAssetProfileDetail() {
 
         {/* Category: Display Monitors */}
         <div className="space-y-3">
-          <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider border-b border-gray-100 pb-1">2. Displays & Monitors</h3>
+          <div className="flex justify-between items-center border-b border-gray-100 pb-1">
+            <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider">2. Displays & Monitors</h3>
+            <button
+              onClick={() => openAssignModal(['Monitor'], 'Display / Monitor')}
+              className="text-indigo-650 hover:text-indigo-800 text-2xs font-extrabold flex items-center gap-1 print:hidden"
+            >
+              ➕ Assign Display
+            </button>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
             {categorize(['Monitor']).map(renderAssetCard)}
             {categorize(['Monitor']).length === 0 && <span className="text-gray-400 text-xs col-span-4">No display monitors assigned.</span>}
@@ -531,7 +710,15 @@ export default function UserAssetProfileDetail() {
 
         {/* Category: Inputs */}
         <div className="space-y-3">
-          <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider border-b border-gray-100 pb-1">3. Input Accessories</h3>
+          <div className="flex justify-between items-center border-b border-gray-100 pb-1">
+            <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider">3. Input Accessories</h3>
+            <button
+              onClick={() => openAssignModal(['Keyboard', 'Mouse'], 'Input Accessory')}
+              className="text-indigo-650 hover:text-indigo-800 text-2xs font-extrabold flex items-center gap-1 print:hidden"
+            >
+              ➕ Assign Input
+            </button>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
             {categorize(['Keyboard', 'Mouse']).map(renderAssetCard)}
             {categorize(['Keyboard', 'Mouse']).length === 0 && <span className="text-gray-400 text-xs col-span-4">No keyboards or mouse accessories assigned.</span>}
@@ -540,7 +727,15 @@ export default function UserAssetProfileDetail() {
 
         {/* Category: Audio/Video & Wireless */}
         <div className="space-y-3">
-          <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider border-b border-gray-100 pb-1">4. Audio, Network & Mobile Devices</h3>
+          <div className="flex justify-between items-center border-b border-gray-100 pb-1">
+            <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider">4. Audio, Network & Mobile Devices</h3>
+            <button
+              onClick={() => openAssignModal(['Headphone', 'Wi-Fi Adapter', 'Bluetooth Adapter', 'Mobile Phone'], 'Audio / Mobile Device')}
+              className="text-indigo-650 hover:text-indigo-800 text-2xs font-extrabold flex items-center gap-1 print:hidden"
+            >
+              ➕ Assign Device
+            </button>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
             {categorize(['Headphone', 'Wi-Fi Adapter', 'Bluetooth Adapter', 'Mobile Phone']).map(renderAssetCard)}
             {categorize(['Headphone', 'Wi-Fi Adapter', 'Bluetooth Adapter', 'Mobile Phone']).length === 0 && <span className="text-gray-400 text-xs col-span-4">No audio, wireless cards, or mobile devices assigned.</span>}
@@ -549,7 +744,15 @@ export default function UserAssetProfileDetail() {
 
         {/* Category: Power */}
         <div className="space-y-3">
-          <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider border-b border-gray-100 pb-1">5. Chargers & Power Adapters</h3>
+          <div className="flex justify-between items-center border-b border-gray-100 pb-1">
+            <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider">5. Chargers & Power Adapters</h3>
+            <button
+              onClick={() => openAssignModal(['Laptop Charger', 'Mobile Charger'], 'Charger / Power Adapter')}
+              className="text-indigo-650 hover:text-indigo-800 text-2xs font-extrabold flex items-center gap-1 print:hidden"
+            >
+              ➕ Assign Charger
+            </button>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
             {categorize(['Laptop Charger', 'Mobile Charger']).map(renderAssetCard)}
             {categorize(['Laptop Charger', 'Mobile Charger']).length === 0 && <span className="text-gray-400 text-xs col-span-4">No chargers assigned.</span>}
@@ -558,7 +761,15 @@ export default function UserAssetProfileDetail() {
 
         {/* Category: Printers */}
         <div className="space-y-3">
-          <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider border-b border-gray-100 pb-1">6. Printers & Shared Scanners</h3>
+          <div className="flex justify-between items-center border-b border-gray-100 pb-1">
+            <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider">6. Printers & Shared Scanners</h3>
+            <button
+              onClick={() => openAssignModal(['Printer'], 'Printer / Scanner')}
+              className="text-indigo-650 hover:text-indigo-800 text-2xs font-extrabold flex items-center gap-1 print:hidden"
+            >
+              ➕ Assign Printer
+            </button>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
             {categorize(['Printer']).map(renderAssetCard)}
             {categorize(['Printer']).length === 0 && <span className="text-gray-400 text-xs col-span-4">No printers assigned.</span>}
@@ -567,7 +778,15 @@ export default function UserAssetProfileDetail() {
 
         {/* Category: Accessories */}
         <div className="space-y-3">
-          <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider border-b border-gray-100 pb-1">7. Other Accessories & Cable kits</h3>
+          <div className="flex justify-between items-center border-b border-gray-100 pb-1">
+            <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider">7. Other Accessories & Cable kits</h3>
+            <button
+              onClick={() => openAssignModal(null, 'Other Accessory', true)}
+              className="text-indigo-650 hover:text-indigo-800 text-2xs font-extrabold flex items-center gap-1 print:hidden"
+            >
+              ➕ Assign Accessory
+            </button>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
             {otherAccessories.map(renderAssetCard)}
             {otherAccessories.length === 0 && <span className="text-gray-400 text-xs col-span-4">No other accessory kits assigned.</span>}
@@ -576,23 +795,41 @@ export default function UserAssetProfileDetail() {
 
         {/* Category: Software Licenses */}
         <div className="space-y-3">
-          <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider border-b border-gray-100 pb-1">8. Software Licenses</h3>
+          <div className="flex justify-between items-center border-b border-gray-100 pb-1">
+            <h3 className="font-extrabold text-gray-800 text-xs uppercase tracking-wider">8. Software Licenses</h3>
+            <button
+              onClick={openAssignLicenseModal}
+              className="text-indigo-650 hover:text-indigo-800 text-2xs font-extrabold flex items-center gap-1 print:hidden"
+            >
+              ➕ Allocate License
+            </button>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
             {profileLicenses.map((lic) => (
-              <div key={lic.id} className="border border-gray-100 rounded-2xl p-4 bg-white shadow-xs space-y-2 text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="font-extrabold text-indigo-900 text-xs">{lic.type}</span>
-                  <span className="rounded bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-3xs font-extrabold text-indigo-700">
-                    License
-                  </span>
+              <div key={lic.id} className="border border-gray-100 rounded-2xl p-4 bg-white shadow-xs space-y-2 text-xs flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <span className="font-extrabold text-indigo-900 text-xs">{lic.type}</span>
+                    <span className="rounded bg-indigo-50 border border-indigo-100 px-2 py-0.5 text-3xs font-extrabold text-indigo-700">
+                      License
+                    </span>
+                  </div>
+                  <h4 className="text-xs font-bold text-gray-800">{lic.name}</h4>
+                  <p className="text-2xs text-gray-500 leading-normal">
+                    {lic.costPerSeat && <><strong>Price / Seat:</strong> {fmtMoney(lic.costPerSeat)} <br /></>}
+                    {lic.purchaseDate && <><strong>Purchased:</strong> {fmtDate(lic.purchaseDate)} <br /></>}
+                    {lic.expiryDate && <><strong>Expiry Date:</strong> {fmtDate(lic.expiryDate)} <br /></>}
+                    {lic.vendor?.name && <><strong>Supplier:</strong> {lic.vendor.name} <br /></>}
+                  </p>
                 </div>
-                <h4 className="text-xs font-bold text-gray-800">{lic.name}</h4>
-                <p className="text-2xs text-gray-500 leading-normal">
-                  {lic.costPerSeat && <><strong>Price / Seat:</strong> {fmtMoney(lic.costPerSeat)} <br /></>}
-                  {lic.purchaseDate && <><strong>Purchased:</strong> {fmtDate(lic.purchaseDate)} <br /></>}
-                  {lic.expiryDate && <><strong>Expiry Date:</strong> {fmtDate(lic.expiryDate)} <br /></>}
-                  {lic.vendor?.name && <><strong>Supplier:</strong> {lic.vendor.name} <br /></>}
-                </p>
+                <div className="pt-2 border-t border-gray-50 flex justify-end print:hidden">
+                  <button
+                    onClick={() => handleRevokeLicense(lic.id)}
+                    className="px-2.5 py-1 bg-red-50 border border-red-100 text-red-700 rounded-lg text-3xs font-extrabold hover:bg-red-100 w-full text-center"
+                  >
+                    Revoke License
+                  </button>
+                </div>
               </div>
             ))}
             {profileLicenses.length === 0 && <span className="text-gray-400 text-xs col-span-4">No software licenses assigned.</span>}
@@ -767,6 +1004,229 @@ export default function UserAssetProfileDetail() {
             </button>
             <button onClick={handleTransferAsset} className="btn-primary" disabled={busy}>
               {busy ? 'Processing…' : 'Execute Transfer'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* EDIT USER PROFILE MODAL */}
+      <Modal open={editProfileModal} title="Edit Employee Profile" onClose={() => setEditProfileModal(false)}>
+        {profileError && <div className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700 font-semibold">{profileError}</div>}
+        <form onSubmit={handleSaveProfile} className="space-y-4 text-xs">
+          <div className="grid gap-3 md:grid-cols-2">
+            <Field label="Employee Full Name" required>
+              <input className="input" required placeholder="e.g. Chirag Gohil" value={profileForm.employeeName} onChange={(e) => setProfileForm({ ...profileForm, employeeName: e.target.value })} />
+            </Field>
+            <Field label="Employee ID" required>
+              <input className="input" required placeholder="e.g. EMP-001" value={profileForm.employeeId} onChange={(e) => setProfileForm({ ...profileForm, employeeId: e.target.value })} />
+            </Field>
+            <Field label="Email Address" required>
+              <input className="input" type="email" required placeholder="name@company.com" value={profileForm.email} onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })} />
+            </Field>
+            <Field label="Department" required>
+              <input className="input" required placeholder="e.g. IT, Account, HR" value={profileForm.department} onChange={(e) => setProfileForm({ ...profileForm, department: e.target.value })} />
+            </Field>
+            <Field label="Job Designation" required>
+              <input className="input" required placeholder="e.g. Senior Executive" value={profileForm.designation} onChange={(e) => setProfileForm({ ...profileForm, designation: e.target.value })} />
+            </Field>
+            <Field label="Corporate Company" required>
+              <input className="input" required placeholder="e.g. Nationwide Paper" value={profileForm.companyName} onChange={(e) => setProfileForm({ ...profileForm, companyName: e.target.value })} />
+            </Field>
+            <Field label="Office Location Site" required>
+              <input className="input" required placeholder="e.g. Head Office, Warehouse 1" value={profileForm.location} onChange={(e) => setProfileForm({ ...profileForm, location: e.target.value })} />
+            </Field>
+            <Field label="Mobile Number">
+              <input className="input" placeholder="e.g. +91 98765 43210" value={profileForm.mobileNumber} onChange={(e) => setProfileForm({ ...profileForm, mobileNumber: e.target.value })} />
+            </Field>
+            <Field label="Employment Status" required>
+              <select className="input" value={profileForm.employmentStatus} onChange={(e) => setProfileForm({ ...profileForm, employmentStatus: e.target.value })}>
+                <option value="ACTIVE">ACTIVE</option>
+                <option value="INACTIVE">INACTIVE</option>
+              </select>
+            </Field>
+          </div>
+          <div className="flex justify-end gap-2 border-t border-gray-50 pt-4 mt-6">
+            <button type="button" className="btn-secondary" onClick={() => setEditProfileModal(false)}>Cancel</button>
+            <button className="btn-primary">Save Profile</button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Assign Asset Modal */}
+      <Modal open={assignModal} title={assignModalTitle} onClose={() => setAssignModal(false)}>
+        {error && <div className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700 font-semibold">{error}</div>}
+        <div className="space-y-4">
+          <Field label="Select Hardware Asset" required>
+            <Select
+              value={selectedAssignAssetId}
+              onChange={setSelectedAssignAssetId}
+              placeholder="-- Choose Available Asset --"
+              options={availableAssets.map((a) => ({
+                value: a.id,
+                label: `${a.manufacturer} ${a.model} (${a.assetTag}) - SN: ${a.serialNumber}`
+              }))}
+              required
+            />
+          </Field>
+
+          <Field label="Assignment Notes">
+            <textarea
+              className="input text-xs"
+              rows={2}
+              value={assignNotes}
+              onChange={(e) => setAssignNotes(e.target.value)}
+              placeholder="Add any specific notes for this assignment..."
+            />
+          </Field>
+
+          <div className="flex justify-end gap-2 border-t border-gray-150 pt-4 mt-6">
+            <button type="button" className="btn-secondary" onClick={() => setAssignModal(false)} disabled={busy}>
+              Cancel
+            </button>
+            <button onClick={handleAssignAssetDirect} className="btn-primary" disabled={busy}>
+              {busy ? 'Processing…' : 'Assign Asset'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Assign License Modal */}
+      <Modal open={assignLicenseModal} title={`Allocate Software License to ${profile.employeeName}`} onClose={() => setAssignLicenseModal(false)}>
+        {error && <div className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700 font-semibold">{error}</div>}
+        <form onSubmit={handleAssignLicenseSubmit} className="space-y-4">
+          <Field label="Select Software License" required>
+            <Select
+              value={selectedLicenseId}
+              onChange={setSelectedLicenseId}
+              placeholder="-- Choose Software License --"
+              options={availableLicenses.map((lic) => {
+                const remaining = lic.totalSeats - (lic.activeSeatsUsed || 0);
+                return {
+                  value: lic.id,
+                  label: `${lic.name} (${lic.type}) — ${remaining} seats left of ${lic.totalSeats}`
+                };
+              })}
+              required
+            />
+          </Field>
+
+          <div className="flex justify-end gap-2 border-t border-gray-150 pt-4 mt-6">
+            <button type="button" className="btn-secondary" onClick={() => setAssignLicenseModal(false)} disabled={busy}>
+              Cancel
+            </button>
+            <button type="submit" className="btn-primary" disabled={busy}>
+              {busy ? 'Processing…' : 'Allocate License'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ACKNOWLEDGEMENT HANDOVER RECEIPT MODAL */}
+      <Modal open={ackFormModal} title="📄 Generated Asset Handover Receipt" onClose={() => setAckFormModal(false)} wide>
+        <div className="p-4 space-y-6 text-xs max-h-[75vh] overflow-y-auto pr-1" id="printable-ack-form">
+          {/* Document Header */}
+          <div className="text-center space-y-1 pb-4 border-b border-gray-200">
+            <h2 className="text-sm font-black text-slate-800 tracking-wider uppercase">Nationwide Paper Ltd</h2>
+            <h3 className="text-xs font-bold text-slate-600 uppercase tracking-widest">IT Asset Handover Receipt & Acknowledgement</h3>
+            <p className="text-3xs text-gray-400">ISO-27001 IT Security Compliance Document</p>
+          </div>
+
+          {/* Metadata Block */}
+          <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-100">
+            <div className="space-y-1">
+              <div><strong className="text-gray-500 uppercase tracking-wider text-3xs">Employee Name:</strong> <span className="font-semibold text-slate-800">{profile.employeeName}</span></div>
+              <div><strong className="text-gray-500 uppercase tracking-wider text-3xs">Employee Code:</strong> <span className="font-semibold text-slate-800">{profile.employeeId}</span></div>
+              <div><strong className="text-gray-500 uppercase tracking-wider text-3xs">Designation:</strong> <span className="font-semibold text-slate-800">{profile.designation || 'IT Executive'}</span></div>
+            </div>
+            <div className="space-y-1">
+              <div><strong className="text-gray-500 uppercase tracking-wider text-3xs">Department:</strong> <span className="font-semibold text-slate-800">{profile.department}</span></div>
+              <div><strong className="text-gray-500 uppercase tracking-wider text-3xs">Primary Location:</strong> <span className="font-semibold text-slate-800">{profile.location}</span></div>
+              <div><strong className="text-gray-500 uppercase tracking-wider text-3xs">Generated Date:</strong> <span className="font-semibold text-slate-800">{new Date().toLocaleDateString('en-GB')}</span></div>
+            </div>
+          </div>
+
+          {/* Hardware List Table */}
+          <div className="space-y-2">
+            <h4 className="font-bold text-gray-700 uppercase tracking-wider text-3xs">Provisioned Hardware Inventory</h4>
+            <div className="border border-gray-150 rounded-xl overflow-hidden">
+              <table className="w-full text-left text-3xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 text-gray-600 font-bold border-b border-gray-200 uppercase tracking-wider">
+                    <th className="px-4 py-2">Asset Tag</th>
+                    <th className="px-4 py-2">Category</th>
+                    <th className="px-4 py-2">Manufacturer / Model</th>
+                    <th className="px-4 py-2">Serial Number</th>
+                    <th className="px-4 py-2">Location</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {assignedAssets.map((a) => (
+                    <tr key={a.assetId} className="hover:bg-slate-50/50">
+                      <td className="px-4 py-2 font-bold text-indigo-700">{a.assetId}</td>
+                      <td className="px-4 py-2 font-semibold">{a.category}</td>
+                      <td className="px-4 py-2">{a.manufacturer} {a.model}</td>
+                      <td className="px-4 py-2 font-mono">{a.serialNumber}</td>
+                      <td className="px-4 py-2">{a.location || 'Head Office'}</td>
+                    </tr>
+                  ))}
+                  {assignedAssets.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-4 py-6 text-center text-gray-400 italic">
+                        No active hardware assets currently provisioned to this employee.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Acknowledgement Statement / Terms */}
+          <div className="space-y-1.5 p-4 bg-indigo-50/20 border border-indigo-100/50 rounded-xl text-3xs leading-relaxed text-gray-650">
+            <h5 className="font-extrabold text-slate-800 uppercase tracking-wider">Declaration of Handover</h5>
+            <p>
+              I hereby acknowledge the receipt of the IT hardware assets listed above in good working condition. 
+              I agree to abide by Nationwide Paper Ltd's IT Policy and security compliance rules. 
+              I take full responsibility for the safety, protection, and professional use of these devices. 
+              Upon termination of employment or when requested by the IT department, I agree to return all assets in clean and operational state.
+            </p>
+          </div>
+
+          {/* Signature blocks */}
+          <div className="grid grid-cols-2 gap-8 pt-8 pb-4">
+            <div className="space-y-12">
+              <div className="border-t border-gray-300 pt-2 text-center text-3xs font-extrabold text-gray-400 uppercase tracking-wider">
+                Authorized IT Representative
+              </div>
+            </div>
+            <div className="space-y-12">
+              <div className="border-t border-gray-300 pt-2 text-center text-3xs font-extrabold text-gray-400 uppercase tracking-wider">
+                Employee Signature
+              </div>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex justify-end gap-2 border-t border-gray-150 pt-4 mt-6 print:hidden">
+            <button type="button" className="btn-secondary" onClick={() => setAckFormModal(false)}>Close</button>
+            <button 
+              type="button" 
+              className="px-4 py-2 bg-indigo-650 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-sm transition-all active:scale-95"
+              onClick={() => {
+                const style = document.createElement('style');
+                style.innerHTML = `
+                  @media print {
+                    body * { visibility: hidden; }
+                    #printable-ack-form, #printable-ack-form * { visibility: visible; }
+                    #printable-ack-form { position: absolute; left: 0; top: 0; width: 100%; }
+                  }
+                `;
+                document.head.appendChild(style);
+                window.print();
+                style.remove();
+              }}
+            >
+              🖨️ Print Receipt
             </button>
           </div>
         </div>

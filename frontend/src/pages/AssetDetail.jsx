@@ -8,6 +8,8 @@ import PageHeader from '../components/PageHeader.jsx';
 import SignaturePad from '../components/SignaturePad.jsx';
 import { Field, Select } from '../components/FormField.jsx';
 import { fmtDate, fmtMoney } from '../utils/format.js';
+import { syncSingleAssetToFirestore } from '../utils/sync.js';
+import { getCollectionItems } from '../utils/firebase.js';
 
 const ACTIONS = ['ASSIGN', 'RETURN', 'TRANSFER', 'REPLACE', 'REPAIR', 'DISPOSE'];
 
@@ -21,7 +23,6 @@ export default function AssetDetail() {
   // Edit asset modal state
   const [editModal, setEditModal] = useState(false);
   const [editForm, setEditForm] = useState({});
-  const [editTab, setEditTab] = useState('basic');
   const [categories, setCategories] = useState([]);
   const [locations, setLocations] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -37,7 +38,10 @@ export default function AssetDetail() {
 
   const load = useCallback(() => {
     api.get(`/assets/${id}`)
-      .then((r) => setAsset(r.data))
+      .then((r) => {
+        setAsset(r.data);
+        syncSingleAssetToFirestore(r.data);
+      })
       .catch((err) => console.error('Failed to load asset:', err));
   }, [id]);
 
@@ -47,9 +51,12 @@ export default function AssetDetail() {
 
   useEffect(() => {
     if (can(user, 'manageInventory')) {
-      api.get('/users', { params: { pageSize: 100 } })
-        .then((r) => setUsers(r.data.items))
-        .catch(() => {});
+      getCollectionItems('users')
+        .then((list) => {
+          const sorted = list.sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
+          setUsers(sorted);
+        })
+        .catch((err) => console.error('Failed to load employee profiles:', err));
     }
   }, [user]);
 
@@ -62,15 +69,40 @@ export default function AssetDetail() {
   };
   const needsUser = !['RETURN', 'DISPOSE'].includes(form.action);
 
+  const getOrCreatePgUser = async (email, name) => {
+    const res = await api.get('/users', { params: { search: email } });
+    let pgUser = res.data.items?.find((u) => u.email.toLowerCase() === email.toLowerCase());
+    if (!pgUser) {
+      const createRes = await api.post('/users', {
+        name: name,
+        email: email,
+        role: 'EMPLOYEE',
+        isActive: true,
+      });
+      pgUser = createRes.data;
+    }
+    return pgUser;
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true);
     setError('');
     try {
+      let pgUserId = undefined;
+      if (needsUser && form.userId) {
+        const selectedUserObj = users.find(u => String(u.id) === String(form.userId));
+        if (!selectedUserObj) throw new Error('Selected employee profile not found.');
+
+        // Resolve PostgreSQL user
+        const pgUser = await getOrCreatePgUser(selectedUserObj.email, selectedUserObj.employeeName || selectedUserObj.name);
+        pgUserId = pgUser.id;
+      }
+
       await api.post('/assignments', {
         assetId: asset.id,
         action: form.action,
-        userId: form.userId ? Number(form.userId) : undefined,
+        userId: pgUserId ? Number(pgUserId) : undefined,
         notes: form.notes,
         signature: form.signature || undefined
       });
@@ -128,7 +160,6 @@ export default function AssetDetail() {
       warrantyStart: asset.warrantyStart ? asset.warrantyStart.substring(0, 10) : '',
       warrantyEnd: asset.warrantyEnd ? asset.warrantyEnd.substring(0, 10) : '',
     });
-    setEditTab('basic');
     setError('');
     loadLookups();
     setEditModal(true);
@@ -177,9 +208,6 @@ export default function AssetDetail() {
     ['Model', asset.model || '—'],
     ['Serial Number', asset.serialNumber || '—'],
     ['Condition', asset.condition || '—'],
-    ['Office Floor', asset.floor || '—'],
-    ['Cabin / Room No.', asset.cabin || '—'],
-    ['Server Rack No.', asset.rackNumber || '—'],
     ['Cost Centre Code', asset.costCentre || '—'],
     ['Owner Department', asset.ownerDepartment || '—'],
   ];
@@ -384,7 +412,7 @@ export default function AssetDetail() {
           {needsUser && (
             <Field label="Assigned Employee" required>
               <Select value={form.userId} onChange={(v) => setForm((f) => ({ ...f, userId: v }))}
-                options={users.map((u) => ({ value: u.id, label: `${u.name} (${u.email})` }))} required />
+                options={users.map((u) => ({ value: u.id, label: `${u.employeeName || u.name} (${u.email})` }))} required />
             </Field>
           )}
           <Field label="Audit remarks / Handover notes">
@@ -436,26 +464,13 @@ export default function AssetDetail() {
       </Modal>
 
       {/* EDIT CONFIGURATION MODAL */}
-      <Modal open={editModal} title={`Edit Asset Profile — ${asset.assetTag}`} onClose={() => setEditModal(false)}>
+      <Modal open={editModal} title={`Edit Asset Profile — ${asset.assetTag}`} onClose={() => setEditModal(false)} wide>
         {error && <div className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700 font-semibold">{error}</div>}
         
-        {/* Modal tabs */}
-        <div className="flex border-b border-gray-100 mb-4 text-xs font-bold">
-          {['basic', 'specs', 'purchase', 'network'].map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => setEditTab(tab)}
-              className={`px-4 py-2 border-b-2 transition-colors uppercase tracking-wider text-3xs ${editTab === tab ? 'border-brand-600 text-brand-700' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
-            >
-              {tab} Details
-            </button>
-          ))}
-        </div>
-
-        <form onSubmit={handleEditSubmit} className="space-y-4 text-xs">
-          {/* TAB 1: BASIC DETAILS */}
-          {editTab === 'basic' && (
+        <form onSubmit={handleEditSubmit} className="space-y-6 text-xs max-h-[75vh] overflow-y-auto pr-1">
+          {/* SECTION 1: BASIC DETAILS */}
+          <div className="space-y-3">
+            <h4 className="font-extrabold text-indigo-900 border-b border-indigo-50 pb-1 text-2xs uppercase tracking-wider">1. Basic Details</h4>
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="Category" required>
                 <Select
@@ -489,10 +504,11 @@ export default function AssetDetail() {
                 />
               </Field>
             </div>
-          )}
+          </div>
 
-          {/* TAB 2: SPECS DETAILS */}
-          {editTab === 'specs' && (
+          {/* SECTION 2: SPECS DETAILS */}
+          <div className="space-y-3">
+            <h4 className="font-extrabold text-indigo-900 border-b border-indigo-50 pb-1 text-2xs uppercase tracking-wider">2. Specifications & Configuration</h4>
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="CPU Configuration">
                 <input className="input" placeholder="e.g. Intel Core i7" value={editForm.cpu || ''} onChange={(e) => setEditForm({ ...editForm, cpu: e.target.value })} />
@@ -525,10 +541,11 @@ export default function AssetDetail() {
                 <input className="input" placeholder="Enabled" value={editForm.firewallStatus || ''} onChange={(e) => setEditForm({ ...editForm, firewallStatus: e.target.value })} />
               </Field>
             </div>
-          )}
+          </div>
 
-          {/* TAB 3: PURCHASE & WARRANTY */}
-          {editTab === 'purchase' && (
+          {/* SECTION 3: PURCHASE & WARRANTY */}
+          <div className="space-y-3">
+            <h4 className="font-extrabold text-indigo-900 border-b border-indigo-50 pb-1 text-2xs uppercase tracking-wider">3. Purchase & Warranty Details</h4>
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="Vendor / Supplier">
                 <Select
@@ -550,10 +567,11 @@ export default function AssetDetail() {
                 <input className="input" type="date" value={editForm.warrantyEnd || ''} onChange={(e) => setEditForm({ ...editForm, warrantyEnd: e.target.value })} />
               </Field>
             </div>
-          )}
+          </div>
 
-          {/* TAB 4: NETWORK & LOCATIONS */}
-          {editTab === 'network' && (
+          {/* SECTION 4: SITE & LOCATIONS */}
+          <div className="space-y-3">
+            <h4 className="font-extrabold text-indigo-900 border-b border-indigo-50 pb-1 text-2xs uppercase tracking-wider">4. Site & Location Details</h4>
             <div className="grid gap-3 md:grid-cols-2">
               <Field label="Primary Office Site Location">
                 <Select
@@ -569,17 +587,8 @@ export default function AssetDetail() {
                   options={departments.map((d) => ({ value: d.id, label: d.name }))}
                 />
               </Field>
-              <Field label="Office Floor Level">
-                <input className="input" placeholder="e.g. 1st Floor" value={editForm.floor || ''} onChange={(e) => setEditForm({ ...editForm, floor: e.target.value })} />
-              </Field>
-              <Field label="Cabin / Room Number">
-                <input className="input" placeholder="e.g. Room 102" value={editForm.cabin || ''} onChange={(e) => setEditForm({ ...editForm, cabin: e.target.value })} />
-              </Field>
-              <Field label="Server Rack Number">
-                <input className="input" placeholder="e.g. Rack A-3" value={editForm.rackNumber || ''} onChange={(e) => setEditForm({ ...editForm, rackNumber: e.target.value })} />
-              </Field>
             </div>
-          )}
+          </div>
 
           <div className="flex justify-end gap-2 border-t border-gray-50 pt-4 mt-6">
             <button type="button" className="btn-secondary" onClick={() => setEditModal(false)}>Cancel</button>

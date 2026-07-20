@@ -4,6 +4,8 @@ import PageHeader from '../components/PageHeader.jsx';
 import DataTable from '../components/DataTable.jsx';
 import Modal from '../components/Modal.jsx';
 import { Field } from '../components/FormField.jsx';
+import { getCollectionItems } from '../utils/firebase.js';
+
 function Select({ value, onChange, options, required }) {
   return (
     <select
@@ -45,7 +47,8 @@ export default function Licenses() {
     expiryDate: '',
     costPerSeat: '',
     notes: '',
-    currency: 'GBP'
+    currency: 'GBP',
+    taxRate: 0
   });
 
   const [selectedLicense, setSelectedLicense] = useState(null);
@@ -53,14 +56,15 @@ export default function Licenses() {
 
   const loadData = async () => {
     try {
-      const [licRes, venRes, userRes] = await Promise.all([
-        api.get('/api/licenses'),
+      const [licRes, venRes, firestoreUsers] = await Promise.all([
+        api.get('/licenses'),
         api.get('/meta/vendors'),
-        api.get('/api/users')
+        getCollectionItems('users')
       ]);
       setLicenses(licRes.data);
       setVendors(venRes.data);
-      setUsers(userRes.data);
+      const sortedUsers = firestoreUsers.sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
+      setUsers(sortedUsers);
     } catch (err) {
       console.error('Failed to load software subscription data:', err);
     } finally {
@@ -84,7 +88,8 @@ export default function Licenses() {
       expiryDate: '',
       costPerSeat: '',
       notes: '',
-      currency: 'GBP'
+      currency: 'GBP',
+      taxRate: 0
     });
     setError('');
     setModalOpen(true);
@@ -98,7 +103,8 @@ export default function Licenses() {
       purchaseDate: license.purchaseDate ? license.purchaseDate.substring(0, 10) : '',
       expiryDate: license.expiryDate ? license.expiryDate.substring(0, 10) : '',
       costPerSeat: license.costPerSeat || '',
-      currency: license.currency || 'GBP'
+      currency: license.currency || 'GBP',
+      taxRate: license.taxRate || 0
     });
     setError('');
     setModalOpen(true);
@@ -112,13 +118,14 @@ export default function Licenses() {
         ...form,
         vendorId: form.vendorId ? Number(form.vendorId) : null,
         totalSeats: Number(form.totalSeats),
-        costPerSeat: form.costPerSeat ? Number(form.costPerSeat) : null
+        costPerSeat: form.costPerSeat ? Number(form.costPerSeat) : null,
+        taxRate: form.taxRate ? Number(form.taxRate) : 0
       };
 
       if (editingLicense) {
-        await api.put(`/api/licenses/${editingLicense.id}`, payload);
+        await api.put(`/licenses/${editingLicense.id}`, payload);
       } else {
-        await api.post('/api/licenses', payload);
+        await api.post('/licenses', payload);
       }
       setModalOpen(false);
       loadData();
@@ -130,7 +137,7 @@ export default function Licenses() {
   const handleDelete = async (id) => {
     if (!window.confirm('Are you sure you want to delete this subscription? This will revoke all allocated seats.')) return;
     try {
-      await api.delete(`/api/licenses/${id}`);
+      await api.delete(`/licenses/${id}`);
       loadData();
     } catch (err) {
       alert('Delete failed: ' + err.message);
@@ -140,7 +147,7 @@ export default function Licenses() {
   const openAssign = async (license) => {
     try {
       // Reload license details with full assignment lists
-      const res = await api.get(`/api/licenses/${license.id}`);
+      const res = await api.get(`/licenses/${license.id}`);
       setSelectedLicense(res.data);
       setSelectedUserId('');
       setError('');
@@ -150,13 +157,35 @@ export default function Licenses() {
     }
   };
 
+  const getOrCreatePgUser = async (email, name) => {
+    const res = await api.get('/users', { params: { search: email } });
+    let pgUser = res.data.items?.find((u) => u.email.toLowerCase() === email.toLowerCase());
+    if (!pgUser) {
+      const createRes = await api.post('/users', {
+        name: name,
+        email: email,
+        role: 'EMPLOYEE',
+        isActive: true,
+      });
+      pgUser = createRes.data;
+    }
+    return pgUser;
+  };
+
   const handleAssignSubmit = async (e) => {
     e.preventDefault();
     if (!selectedUserId) return;
     setError('');
     try {
-      await api.post(`/api/licenses/${selectedLicense.id}/assign`, { userId: Number(selectedUserId) });
-      const res = await api.get(`/api/licenses/${selectedLicense.id}`);
+      const selectedUserObj = users.find(u => String(u.id) === String(selectedUserId));
+      if (!selectedUserObj) throw new Error('Selected employee profile not found.');
+
+      // Resolve PostgreSQL user
+      const pgUser = await getOrCreatePgUser(selectedUserObj.email, selectedUserObj.employeeName || selectedUserObj.name);
+      const pgUserId = pgUser.id;
+
+      await api.post(`/licenses/${selectedLicense.id}/assign`, { userId: Number(pgUserId) });
+      const res = await api.get(`/licenses/${selectedLicense.id}`);
       setSelectedLicense(res.data);
       setSelectedUserId('');
       loadData();
@@ -168,8 +197,8 @@ export default function Licenses() {
   const handleRevoke = async (userId) => {
     if (!window.confirm('Are you sure you want to revoke this seat assignment?')) return;
     try {
-      await api.post(`/api/licenses/${selectedLicense.id}/revoke`, { userId });
-      const res = await api.get(`/api/licenses/${selectedLicense.id}`);
+      await api.post(`/licenses/${selectedLicense.id}/revoke`, { userId });
+      const res = await api.get(`/licenses/${selectedLicense.id}`);
       setSelectedLicense(res.data);
       loadData();
     } catch (err) {
@@ -278,7 +307,16 @@ export default function Licenses() {
             return <span className={`px-2 py-0.5 rounded-full font-semibold select-none ${colorClass}`}>{fmtDate(l.expiryDate)}</span>;
           }},
           { header: 'Cost per Seat', key: 'costPerSeat', render: (l) => fmtMoney(l.costPerSeat, l.currency) },
-          { header: 'Total Annual Cost', key: 'totalCost', render: (l) => fmtMoney(l.totalCost, l.currency) },
+          { header: 'Total Annual Cost', key: 'totalCost', render: (l) => (
+            <div>
+              <div>{fmtMoney(l.totalCost, l.currency)}</div>
+              {Number(l.taxRate) > 0 && (
+                <div className="text-3xs text-gray-400 font-bold">
+                  (incl. {l.taxRate}% {l.currency === 'GBP' ? 'VAT' : l.currency === 'INR' ? 'GST' : 'Tax'})
+                </div>
+              )}
+            </div>
+          ) },
           {
             header: 'Actions',
             render: (l) => (
@@ -366,6 +404,9 @@ export default function Licenses() {
             <Field label="Expiry / Next Renewal Date">
               <input className="input" type="date" value={form.expiryDate} onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />
             </Field>
+            <Field label={form.currency === 'GBP' ? 'VAT (%)' : form.currency === 'INR' ? 'GST (%)' : 'Tax (%)'}>
+              <input className="input" type="number" min="0" max="100" step="0.1" placeholder="0" value={form.taxRate} onChange={(e) => setForm({ ...form, taxRate: e.target.value })} />
+            </Field>
             <div className="col-span-2">
               <Field label="Contract Notes / Remarks">
                 <textarea className="input" rows={2} placeholder="Add pricing models, billing cycles or department chargeback codes..." value={form.notes || ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
@@ -397,7 +438,7 @@ export default function Licenses() {
                   <Select
                     value={selectedUserId}
                     onChange={(v) => setSelectedUserId(v)}
-                    options={users.map(u => ({ value: u.id, label: `${u.name} (${u.email})` }))}
+                    options={users.map(u => ({ value: u.id, label: `${u.employeeName || u.name} (${u.email})` }))}
                     required
                   />
                 </Field>

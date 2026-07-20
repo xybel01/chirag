@@ -9,6 +9,7 @@ import StatusBadge from '../components/StatusBadge.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import { Field, Select } from '../components/FormField.jsx';
 import { fmtDate } from '../utils/format.js';
+import { syncAssetsToFirestore } from '../utils/sync.js';
 
 const STATUSES = ['AVAILABLE', 'ASSIGNED', 'REPAIR', 'FAULTY', 'LOST', 'DISPOSED'];
 const EMPTY = { serialNumber: '', model: '', manufacturer: '', categoryId: '', vendorId: '', purchaseDate: '', purchasePrice: '', warrantyStart: '', warrantyEnd: '', locationId: '', departmentId: '', notes: '', ram: '', storage: '', cpu: '' };
@@ -30,7 +31,10 @@ export default function Assets() {
 
   const load = useCallback(() => {
     api.get('/assets', { params: { page, search, status, categoryId } })
-      .then((res) => setData(res.data)).catch(() => {});
+      .then((res) => {
+        setData(res.data);
+        syncAssetsToFirestore(res.data.items);
+      }).catch(() => {});
   }, [page, search, status, categoryId]);
   useEffect(() => { load(); }, [load]);
 
@@ -46,6 +50,12 @@ export default function Assets() {
     setForm({ ...EMPTY, ...Object.fromEntries(Object.keys(EMPTY).map((k) => [k, asset[k] ?? ''])),
       purchaseDate: asset.purchaseDate?.slice(0, 10) || '', warrantyStart: asset.warrantyStart?.slice(0, 10) || '', warrantyEnd: asset.warrantyEnd?.slice(0, 10) || '' });
     setFiles({}); setError(''); setModal({ asset });
+  };
+  const openCopy = (asset) => {
+    setForm({ ...EMPTY, ...Object.fromEntries(Object.keys(EMPTY).map((k) => [k, asset[k] ?? ''])),
+      serialNumber: '',
+      purchaseDate: asset.purchaseDate?.slice(0, 10) || '', warrantyStart: asset.warrantyStart?.slice(0, 10) || '', warrantyEnd: asset.warrantyEnd?.slice(0, 10) || '' });
+    setFiles({}); setError(''); setModal({ isCopy: true });
   };
 
   const submit = async (e) => {
@@ -115,7 +125,13 @@ export default function Assets() {
                     >
                       Edit
                     </button>
-                    {user?.role === 'ADMIN' && (
+                    <button 
+                      onClick={() => openCopy(a)} 
+                      className="px-2 py-1 text-2xs font-semibold bg-slate-50 border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors"
+                    >
+                      Copy
+                    </button>
+                    {['ADMIN', 'IT_MANAGER', 'IT_SUPPORT'].includes(user?.role) && (
                       <button 
                         onClick={() => handleDelete(a)} 
                         className="px-2 py-1 text-2xs font-semibold bg-red-50 border border-red-200 text-red-700 rounded-lg hover:bg-red-100 transition-colors"
@@ -134,7 +150,7 @@ export default function Assets() {
         onRowClick={(a) => navigate(`/assets/${a.id}`)}
       />
 
-      <Modal open={!!modal} title={modal?.asset ? `Edit ${modal.asset.assetTag}` : 'Add Asset'} onClose={() => setModal(null)} wide>
+      <Modal open={!!modal} title={modal?.asset ? `Edit ${modal.asset.assetTag}` : (modal?.isCopy ? 'Copy Asset' : 'Add Asset')} onClose={() => setModal(null)} wide>
         {error && <div className="mb-4 rounded bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
         <form onSubmit={submit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {!modal?.asset && (

@@ -4,6 +4,8 @@ import api, { apiError } from '../api/client';
 import PageHeader from '../components/PageHeader.jsx';
 import { Field, Select } from '../components/FormField.jsx';
 import Modal from '../components/Modal.jsx';
+import { getCollectionItems } from '../utils/firebase.js';
+import { syncSingleAssetToFirestore } from '../utils/sync.js';
 
 export default function AssignAssets() {
   const navigate = useNavigate();
@@ -44,15 +46,24 @@ export default function AssignAssets() {
 
   const loadData = async () => {
     try {
-      const usersRes = await api.get('/users', { params: { pageSize: 500 } });
-      setUsers(usersRes.data.items || []);
+      const firestoreUsers = await getCollectionItems('users');
+      const sortedUsers = firestoreUsers.sort((a, b) => (a.employeeName || '').localeCompare(b.employeeName || ''));
+      setUsers(sortedUsers);
 
       const assetsRes = await api.get('/assets', { params: { status: 'AVAILABLE', pageSize: 1000 } });
       setAssets(assetsRes.data.items || []);
 
       if (initialUserId) {
-        const matched = usersRes.data.items?.find((u) => String(u.id) === String(initialUserId));
-        setSelectedUser(matched || null);
+        const matched = sortedUsers.find(
+          (u) =>
+            String(u.id) === String(initialUserId) ||
+            u.email?.toLowerCase() === initialUserId.toLowerCase() ||
+            u.employeeId === initialUserId
+        );
+        if (matched) {
+          setSelectedUserId(matched.id);
+          setSelectedUser(matched);
+        }
       }
     } catch (err) {
       console.error('Failed to load assignment data:', err);
@@ -163,28 +174,54 @@ export default function AssignAssets() {
     setHasSignature(false);
   };
 
+  const getOrCreatePgUser = async (email, name) => {
+    const res = await api.get('/users', { params: { search: email } });
+    let pgUser = res.data.items?.find((u) => u.email.toLowerCase() === email.toLowerCase());
+    if (!pgUser) {
+      const createRes = await api.post('/users', {
+        name: name,
+        email: email,
+        role: 'EMPLOYEE',
+        isActive: true,
+      });
+      pgUser = createRes.data;
+    }
+    return pgUser;
+  };
+
   const executeAssignment = async () => {
     setBusy(true);
     setError('');
     setSuccess('');
     try {
+      if (!selectedUser) {
+        throw new Error('Please select an employee recipient first.');
+      }
+
+      // Resolve PostgreSQL user
+      const pgUser = await getOrCreatePgUser(selectedUser.email, selectedUser.employeeName || selectedUser.name);
+      const pgUserId = pgUser.id;
+
       const selectedIds = getSelectedAssetIdsList();
       let signatureDataUrl = '';
       if (hasSignature && canvasRef.current) {
         signatureDataUrl = canvasRef.current.toDataURL();
       }
 
-      // Assign all selected assets sequentially
+      // Assign all selected assets sequentially and sync each to Firestore
       await Promise.all(
-        selectedIds.map((id) =>
-          api.post('/assignments', {
+        selectedIds.map(async (id) => {
+          await api.post('/assignments', {
             assetId: Number(id),
-            userId: Number(selectedUserId),
+            userId: Number(pgUserId),
             action: 'ASSIGN',
             notes: notes || 'Batch User-Wise Asset Handover Assignment Form',
             signature: signatureDataUrl || undefined,
-          })
-        )
+          });
+          // Fetch latest state from PostgreSQL database and sync to Firestore
+          const assetRes = await api.get(`/assets/${id}`);
+          await syncSingleAssetToFirestore(assetRes.data);
+        })
       );
 
       setSuccess('Asset assignment registered successfully! Handover receipt generated.');
@@ -238,7 +275,7 @@ export default function AssignAssets() {
                 value={selectedUserId}
                 onChange={handleUserChange}
                 placeholder="-- Select User --"
-                options={users.map((u) => ({ value: u.id, label: `${u.name} (${u.email})` }))}
+                options={users.map((u) => ({ value: u.id, label: `${u.employeeName || u.name} (${u.email})` }))}
                 required
               />
             </Field>

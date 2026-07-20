@@ -319,6 +319,7 @@ model License {
   totalCost    Decimal?            @db.Decimal(12, 2)
   notes        String?
   currency     String?             @default("GBP")
+  taxRate      Decimal?            @db.Decimal(5, 2) @default(0)
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
   assignments  LicenseAssignment[]

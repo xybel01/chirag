@@ -18,7 +18,7 @@ function Write-Log {
 Write-Log "Starting ITAM Discovery Scan..."
 
 # Portal API Configuration
-$ApiUrl = "http://localhost:5000/api/agent/submit" # Update to production URL as needed
+$ApiUrl = "http://localhost:5005/api/agent/submit" # Update to production URL as needed
 $RegistrationToken = "ITAM-AGENT-SECURE-TOKEN-2026"
 
 try {

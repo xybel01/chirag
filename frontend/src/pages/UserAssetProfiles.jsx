@@ -160,6 +160,9 @@ export default function UserAssetProfiles() {
         subtitle="View and manage hardware allocations per employee"
         actions={
           <div className="flex gap-2">
+            <button className="btn-secondary text-brand-700 bg-brand-50 border-brand-200" onClick={() => navigate('/user-profiles/import')}>
+              Import Profiles
+            </button>
             <button className="btn-secondary text-brand-700 bg-brand-50 border-brand-200" onClick={openCreate}>
               + Add Profile
             </button>
