@@ -9,7 +9,28 @@ const app = express();
 app.set('trust proxy', 1); // behind nginx
 
 app.use(helmet());
-app.use(cors({ origin: config.appUrl, credentials: true }));
+
+const allowedOrigins = [
+  config.appUrl,
+  'http://localhost:5173',
+  'http://localhost:3000'
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin) return callback(null, true);
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (!allowed) return false;
+      return origin.toLowerCase() === allowed.toLowerCase() || origin.endsWith('.vercel.app');
+    });
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
 app.use(express.json({ limit: '2mb' })); // signatures come as base64 PNG
 app.use(express.urlencoded({ extended: true }));
 app.use('/api', apiLimiter);
