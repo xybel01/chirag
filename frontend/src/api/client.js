@@ -1,6 +1,18 @@
 import axios from 'axios';
 
-const api = axios.create({ baseURL: '/api' });
+const getBaseURL = () => {
+  return import.meta.env.VITE_API_URL || '/api';
+};
+
+const getCleanHost = () => {
+  const base = getBaseURL();
+  if (base.startsWith('http')) {
+    return base.endsWith('/api') ? base.substring(0, base.length - 4) : base;
+  }
+  return '';
+};
+
+const api = axios.create({ baseURL: getBaseURL() });
 
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
@@ -19,7 +31,18 @@ api.interceptors.response.use(
   }
 );
 
-export const fileUrl = (name) => `/api/files/${encodeURIComponent(name)}?token=${localStorage.getItem('token')}`;
-export const authedImg = (path) => `${path}?token=${localStorage.getItem('token')}`;
+export const fileUrl = (name) => {
+  const host = getCleanHost();
+  return `${host}/api/files/${encodeURIComponent(name)}?token=${localStorage.getItem('token')}`;
+};
+
+export const authedImg = (path) => {
+  if (path && path.startsWith('/api')) {
+    const host = getCleanHost();
+    return `${host}${path}?token=${localStorage.getItem('token')}`;
+  }
+  return `${path}?token=${localStorage.getItem('token')}`;
+};
+
 export const apiError = (err) => err.response?.data?.error || err.message || 'Something went wrong';
 export default api;
