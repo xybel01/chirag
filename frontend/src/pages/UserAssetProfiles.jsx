@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth, can } from '../context/AuthContext.jsx';
 import { getCollectionItems, setCollectionDoc, runFirestoreBatch } from '../utils/firebase.js';
 import PageHeader from '../components/PageHeader.jsx';
 import DataTable from '../components/DataTable.jsx';
@@ -7,6 +8,7 @@ import Modal from '../components/Modal.jsx';
 import { Field, Select } from '../components/FormField.jsx';
 
 export default function UserAssetProfiles() {
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [users, setUsers] = useState([]);
@@ -160,15 +162,21 @@ export default function UserAssetProfiles() {
         subtitle="View and manage hardware allocations per employee"
         actions={
           <div className="flex gap-2">
-            <button className="btn-secondary text-brand-700 bg-brand-50 border-brand-200" onClick={() => navigate('/user-profiles/import')}>
-              Import Profiles
-            </button>
-            <button className="btn-secondary text-brand-700 bg-brand-50 border-brand-200" onClick={openCreate}>
-              + Add Profile
-            </button>
-            <button className="btn-primary" onClick={() => navigate('/assets/assign')}>
-              + Assign Assets
-            </button>
+            {can(user, 'manageInventory') && (
+              <button className="btn-secondary text-brand-700 bg-brand-50 border-brand-200" onClick={() => navigate('/user-profiles/import')}>
+                Import Profiles
+              </button>
+            )}
+            {can(user, 'manageInventory') && (
+              <button className="btn-secondary text-brand-700 bg-brand-50 border-brand-200" onClick={openCreate}>
+                + Add Profile
+              </button>
+            )}
+            {can(user, 'manageInventory') && (
+              <button className="btn-primary" onClick={() => navigate('/assets/assign')}>
+                + Assign Assets
+              </button>
+            )}
           </div>
         }
       />

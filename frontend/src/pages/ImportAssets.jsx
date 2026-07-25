@@ -47,7 +47,7 @@ export default function ImportAssets() {
 
   // Redirect if not authorized
   useEffect(() => {
-    if (user && !['ADMIN', 'IT_MANAGER', 'IT_SUPPORT'].includes(user.role)) {
+    if (user && !['SUPER_ADMIN', 'ADMIN', 'IT_MANAGER', 'IT_SUPPORT'].includes(user.role)) {
       navigate('/');
     }
   }, [user, navigate]);
