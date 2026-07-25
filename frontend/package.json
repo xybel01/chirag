@@ -15,9 +15,7 @@
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.27.0",
     "recharts": "^2.13.0",
-    "xlsx": "^0.18.5"
-  },
-  "devDependencies": {
+    "xlsx": "^0.18.5",
     "@vitejs/plugin-react": "^4.3.2",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.47",
@@ -25,6 +23,6 @@
     "vite": "^5.4.9"
   },
   "engines": {
-    "node": "20.x"
+    "node": "22.x"
   }
 }
