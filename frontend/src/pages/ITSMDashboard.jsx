@@ -111,7 +111,7 @@ export default function ITSMDashboard() {
         </div>
 
         {/* System Guidelines Alert Panel */}
-        <div className="card p-5 bg-gradient-to-tr from-brand-850 to-indigo-900 text-white flex flex-col justify-between">
+        <div className="card p-5 bg-gradient-to-tr from-indigo-950 to-slate-900 text-white flex flex-col justify-between">
           <div>
             <span className="rounded bg-indigo-500/30 border border-indigo-400/20 px-2 py-0.5 text-2xs font-bold text-indigo-200 tracking-wider uppercase">Quick Actions</span>
             <h3 className="font-extrabold text-lg mt-2 mb-3">User-Wise IT Lifecycle Management</h3>
