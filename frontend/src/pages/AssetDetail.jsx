@@ -201,6 +201,9 @@ export default function AssetDetail() {
     }
   };
 
+  const activeCategory = categories.find(c => Number(c.id) === Number(editForm.categoryId));
+  const activeCategoryCode = activeCategory?.code || asset?.category?.code || '';
+
   // Build info array dynamically
   const info = [
     ['Category', asset.category?.name || '—'],
@@ -507,41 +510,99 @@ export default function AssetDetail() {
           </div>
 
           {/* SECTION 2: SPECS DETAILS */}
-          <div className="space-y-3">
-            <h4 className="font-extrabold text-indigo-900 border-b border-indigo-50 pb-1 text-2xs uppercase tracking-wider">2. Specifications & Configuration</h4>
-            <div className="grid gap-3 md:grid-cols-2">
-              <Field label="CPU Configuration">
-                <input className="input" placeholder="e.g. Intel Core i7" value={editForm.cpu || ''} onChange={(e) => setEditForm({ ...editForm, cpu: e.target.value })} />
-              </Field>
-              <Field label="RAM Memory Capacity">
-                <input className="input" placeholder="e.g. 16 GB" value={editForm.ram || ''} onChange={(e) => setEditForm({ ...editForm, ram: e.target.value })} />
-              </Field>
-              <Field label="Storage Capacity">
-                <input className="input" placeholder="e.g. 512GB SSD" value={editForm.storage || ''} onChange={(e) => setEditForm({ ...editForm, storage: e.target.value })} />
-              </Field>
-              <Field label="GPU Card Model">
-                <input className="input" placeholder="e.g. RTX 4060" value={editForm.gpu || ''} onChange={(e) => setEditForm({ ...editForm, gpu: e.target.value })} />
-              </Field>
-              <Field label="OS Version Edition">
-                <input className="input" placeholder="e.g. Windows 11 Pro" value={editForm.operatingSystem || ''} onChange={(e) => setEditForm({ ...editForm, operatingSystem: e.target.value })} />
-              </Field>
-              <Field label="BitLocker Recovery Key">
-                <input className="input" placeholder="e.g. 48-digit key" value={editForm.recoveryKey || ''} onChange={(e) => setEditForm({ ...editForm, recoveryKey: e.target.value })} />
-              </Field>
-              <Field label="BitLocker Encryption Status">
-                <Select value={editForm.bitLockerStatus || 'Enabled'} onChange={(v) => setEditForm({ ...editForm, bitLockerStatus: v })} options={[{ value: 'Enabled', label: 'Enabled' }, { value: 'Disabled', label: 'Disabled' }]} />
-              </Field>
-              <Field label="TPM Security Firmware Version">
-                <input className="input" placeholder="2.0" value={editForm.tpmVersion || ''} onChange={(e) => setEditForm({ ...editForm, tpmVersion: e.target.value })} />
-              </Field>
-              <Field label="Defender Status">
-                <input className="input" placeholder="Running" value={editForm.defenderStatus || ''} onChange={(e) => setEditForm({ ...editForm, defenderStatus: e.target.value })} />
-              </Field>
-              <Field label="Firewall Status">
-                <input className="input" placeholder="Enabled" value={editForm.firewallStatus || ''} onChange={(e) => setEditForm({ ...editForm, firewallStatus: e.target.value })} />
-              </Field>
+          {['LAP', 'DSK', 'WKS', 'MPC', 'PRN', 'MOB', 'TAB', 'SWT', 'RTR', 'FWL', 'WAP'].includes(activeCategoryCode) && (
+            <div className="space-y-3">
+              <h4 className="font-extrabold text-indigo-900 border-b border-indigo-50 pb-1 text-2xs uppercase tracking-wider">2. Specifications & Configuration</h4>
+              <div className="grid gap-3 md:grid-cols-2">
+                {/* Laptop / Desktop Configuration */}
+                {['LAP', 'DSK', 'WKS', 'MPC'].includes(activeCategoryCode) && (
+                  <>
+                    <Field label="CPU Configuration">
+                      <input className="input" placeholder="e.g. Intel Core i7" value={editForm.cpu || ''} onChange={(e) => setEditForm({ ...editForm, cpu: e.target.value })} />
+                    </Field>
+                    <Field label="RAM Memory Capacity">
+                      <input className="input" placeholder="e.g. 16 GB" value={editForm.ram || ''} onChange={(e) => setEditForm({ ...editForm, ram: e.target.value })} />
+                    </Field>
+                    <Field label="Storage Capacity">
+                      <input className="input" placeholder="e.g. 512GB SSD" value={editForm.storage || ''} onChange={(e) => setEditForm({ ...editForm, storage: e.target.value })} />
+                    </Field>
+                    <Field label="GPU Card Model">
+                      <input className="input" placeholder="e.g. RTX 4060" value={editForm.gpu || ''} onChange={(e) => setEditForm({ ...editForm, gpu: e.target.value })} />
+                    </Field>
+                    <Field label="OS Version Edition">
+                      <input className="input" placeholder="e.g. Windows 11 Pro" value={editForm.operatingSystem || ''} onChange={(e) => setEditForm({ ...editForm, operatingSystem: e.target.value })} />
+                    </Field>
+                    <Field label="BitLocker Recovery Key">
+                      <input className="input" placeholder="e.g. 48-digit key" value={editForm.recoveryKey || ''} onChange={(e) => setEditForm({ ...editForm, recoveryKey: e.target.value })} />
+                    </Field>
+                    <Field label="BitLocker Encryption Status">
+                      <Select value={editForm.bitLockerStatus || 'Enabled'} onChange={(v) => setEditForm({ ...editForm, bitLockerStatus: v })} options={[{ value: 'Enabled', label: 'Enabled' }, { value: 'Disabled', label: 'Disabled' }]} />
+                    </Field>
+                    <Field label="TPM Security Firmware Version">
+                      <input className="input" placeholder="2.0" value={editForm.tpmVersion || ''} onChange={(e) => setEditForm({ ...editForm, tpmVersion: e.target.value })} />
+                    </Field>
+                    <Field label="Defender Status">
+                      <input className="input" placeholder="Running" value={editForm.defenderStatus || ''} onChange={(e) => setEditForm({ ...editForm, defenderStatus: e.target.value })} />
+                    </Field>
+                    <Field label="Firewall Status">
+                      <input className="input" placeholder="Enabled" value={editForm.firewallStatus || ''} onChange={(e) => setEditForm({ ...editForm, firewallStatus: e.target.value })} />
+                    </Field>
+                  </>
+                )}
+
+                {/* Printer / Scanner Configuration */}
+                {['PRN'].includes(activeCategoryCode) && (
+                  <>
+                    <Field label="Toner / Drum Model">
+                      <input className="input" placeholder="e.g. CF258A" value={editForm.drumModel || ''} onChange={(e) => setEditForm({ ...editForm, drumModel: e.target.value })} />
+                    </Field>
+                    <Field label="Current Print Page Count">
+                      <input className="input" type="number" value={editForm.currentPageCount || 0} onChange={(e) => setEditForm({ ...editForm, currentPageCount: Number(e.target.value) })} />
+                    </Field>
+                    <Field label="Network IP Address">
+                      <input className="input" placeholder="e.g. 192.168.1.50" value={editForm.wanIp || ''} onChange={(e) => setEditForm({ ...editForm, wanIp: e.target.value })} />
+                    </Field>
+                    <Field label="Network MAC Address">
+                      <input className="input" placeholder="e.g. AA:BB:CC:DD:EE:FF" value={editForm.wifiMac || ''} onChange={(e) => setEditForm({ ...editForm, wifiMac: e.target.value })} />
+                    </Field>
+                  </>
+                )}
+
+                {/* Mobile / Tablet Configuration */}
+                {['MOB', 'TAB'].includes(activeCategoryCode) && (
+                  <>
+                    <Field label="SIM Provider Carrier">
+                      <input className="input" placeholder="e.g. Vodafone" value={editForm.carrier || ''} onChange={(e) => setEditForm({ ...editForm, carrier: e.target.value })} />
+                    </Field>
+                    <Field label="Secondary IMEI 2">
+                      <input className="input" placeholder="e.g. 35xxxxxxxxxxxxx" value={editForm.imeiNumber2 || ''} onChange={(e) => setEditForm({ ...editForm, imeiNumber2: e.target.value })} />
+                    </Field>
+                    <Field label="MDM Configuration Status">
+                      <Select value={editForm.mdmStatus || 'None'} onChange={(v) => setEditForm({ ...editForm, mdmStatus: v })} options={[{ value: 'Configured', label: 'Intune MDM Active' }, { value: 'None', label: 'Unmanaged' }]} />
+                    </Field>
+                  </>
+                )}
+
+                {/* Network Configuration */}
+                {['SWT', 'RTR', 'FWL', 'WAP'].includes(activeCategoryCode) && (
+                  <>
+                    <Field label="Public WAN IP Address">
+                      <input className="input" placeholder="e.g. 203.0.113.1" value={editForm.wanIp || ''} onChange={(e) => setEditForm({ ...editForm, wanIp: e.target.value })} />
+                    </Field>
+                    <Field label="Interface Ports Count">
+                      <input className="input" type="number" placeholder="24" value={editForm.portsCount || ''} onChange={(e) => setEditForm({ ...editForm, portsCount: Number(e.target.value) })} />
+                    </Field>
+                    <Field label="ISP Link Service Provider">
+                      <input className="input" placeholder="e.g. Tata Communications" value={editForm.ispName || ''} onChange={(e) => setEditForm({ ...editForm, ispName: e.target.value })} />
+                    </Field>
+                    <Field label="Firmware Release Version">
+                      <input className="input" placeholder="e.g. v15.2(4)M" value={editForm.firmwareVersion || ''} onChange={(e) => setEditForm({ ...editForm, firmwareVersion: e.target.value })} />
+                    </Field>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* SECTION 3: PURCHASE & WARRANTY */}
           <div className="space-y-3">
