@@ -3,6 +3,7 @@ import PageHeader from '../components/PageHeader.jsx';
 import StatCard from '../components/StatCard.jsx';
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import api from '../api/client';
+import { getCollectionItems } from '../utils/firebase.js';
 
 export default function ITSMDashboard() {
   const [loading, setLoading] = useState(true);
@@ -24,13 +25,25 @@ export default function ITSMDashboard() {
   useEffect(() => {
     async function loadStats() {
       try {
-        const res = await api.get('/dashboard');
+        const [res, usersList, assetsList] = await Promise.all([
+          api.get('/dashboard'),
+          getCollectionItems('users'),
+          getCollectionItems('assets')
+        ]);
         const data = res.data;
 
+        // Calculate user assignment statistics directly from Firestore User Profiles
+        const usersWithAssetsCount = usersList.filter(u => {
+          return assetsList.some(a => 
+            a.assignedUserId === u.id || 
+            (u.email && a.assignedUserId?.toLowerCase() === u.email.toLowerCase())
+          );
+        }).length;
+
         setStats({
-          totalUsers: data.totals.users,
-          usersWithAssets: data.totals.assigned,
-          usersWithoutAssets: Math.max(0, data.totals.users - data.totals.assigned),
+          totalUsers: usersList.length,
+          usersWithAssets: usersWithAssetsCount,
+          usersWithoutAssets: Math.max(0, usersList.length - usersWithAssetsCount),
           totalAssignedAssets: data.totals.assigned,
           availableAssets: data.totals.available,
           returnedAssets: data.totals.disposed,
