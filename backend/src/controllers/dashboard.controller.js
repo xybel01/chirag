@@ -1,5 +1,6 @@
 const prisma = require('../config/prisma');
 const config = require('../config');
+const { sendMail, layout } = require('../services/email');
 
 async function stats(_req, res) {
   const now = new Date();
@@ -42,4 +43,56 @@ async function stats(_req, res) {
   });
 }
 
-module.exports = { stats };
+async function sendAckEmail(req, res) {
+  const { employeeEmail, employeeName, assets } = req.body;
+  if (!employeeEmail || !employeeName) {
+    return res.status(400).json({ error: 'employeeEmail and employeeName are required' });
+  }
+
+  const assetsRows = (assets || []).map(a => `
+    <tr>
+      <td style="padding: 8px; border: 1px solid #e5e7eb; font-weight: bold; color: #4f46e5;">${a.assetId || '—'}</td>
+      <td style="padding: 8px; border: 1px solid #e5e7eb;">${a.category || '—'}</td>
+      <td style="padding: 8px; border: 1px solid #e5e7eb;">${a.manufacturer || ''} ${a.model || ''}</td>
+      <td style="padding: 8px; border: 1px solid #e5e7eb; font-family: monospace;">${a.serialNumber || '—'}</td>
+    </tr>
+  `).join('');
+
+  const html = layout('📄 IT Asset Handover Acknowledgement Request', `
+    <p>Dear <b>${employeeName}</b>,</p>
+    <p>Please find below the list of IT hardware assets currently provisioned and assigned to you by Nationwide Paper Ltd IT Department:</p>
+    
+    <table style="width: 100%; border-collapse: collapse; margin-top: 16px; margin-bottom: 16px; font-size: 13px;">
+      <thead>
+        <tr style="background-color: #f3f4f6; text-align: left;">
+          <th style="padding: 8px; border: 1px solid #e5e7eb;">Asset Tag</th>
+          <th style="padding: 8px; border: 1px solid #e5e7eb;">Category</th>
+          <th style="padding: 8px; border: 1px solid #e5e7eb;">Model / Specs</th>
+          <th style="padding: 8px; border: 1px solid #e5e7eb;">Serial Number</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${assetsRows || '<tr><td colspan="4" style="padding: 12px; text-align: center; color: #9ca3af; font-style: italic;">No active assets currently assigned.</td></tr>'}
+      </tbody>
+    </table>
+
+    <p style="background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 12px; font-size: 12px; color: #78350f;">
+      <b>Acknowledgement Declaration:</b> By receiving this email, you verify the listed serial numbers and confirm receipt. 
+      Please reply directly to this email or contact the IT Department if there are any discrepancies.
+    </p>
+    
+    <p style="margin-top: 24px;">Regards,<br/><b>IT Department</b><br/>Nationwide Paper Ltd</p>
+  `);
+
+  const subject = `[IT Asset Acknowledgement] Assigned Equipment Verification — ${employeeName}`;
+  await sendMail({
+    to: employeeEmail,
+    cc: config.itManagerEmail || undefined,
+    subject,
+    html,
+  });
+
+  res.json({ success: true, message: `Acknowledgement email sent to ${employeeEmail}!` });
+}
+
+module.exports = { stats, sendAckEmail };

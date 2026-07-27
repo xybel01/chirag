@@ -68,6 +68,7 @@ export default function UserAssetProfileDetail() {
   const [availableLicenses, setAvailableLicenses] = useState([]);
   const [selectedLicenseId, setSelectedLicenseId] = useState('');
   const [ackFormModal, setAckFormModal] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   // Busy/Save state
   const [busy, setBusy] = useState(false);
@@ -371,6 +372,33 @@ export default function UserAssetProfileDetail() {
     }
   };
 
+  const handleSendAckEmail = async () => {
+    if (!profile?.email) {
+      alert('Error: Employee does not have a registered email address!');
+      return;
+    }
+    setSendingEmail(true);
+    try {
+      await api.post('/dashboard/send-ack-email', {
+        employeeEmail: profile.email,
+        employeeName: profile.employeeName,
+        assets: assignedAssets.map(a => ({
+          assetId: a.assetId,
+          category: a.category,
+          manufacturer: a.manufacturer,
+          model: a.model,
+          serialNumber: a.serialNumber
+        }))
+      });
+      alert(`Success: Acknowledgement email successfully sent to ${profile.email}!`);
+    } catch (err) {
+      console.error(err);
+      alert(`Failed to send email: ${err.response?.data?.error || err.message}`);
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
   const openEditProfile = () => {
     setProfileForm({
       employeeName: profile.employeeName || '',
@@ -664,8 +692,8 @@ export default function UserAssetProfileDetail() {
         <button onClick={() => handleAcknowledgeMock('Acknowledgement Form')} className="px-3.5 py-1.5 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-xl hover:bg-indigo-100">
           📄 Generate Acknowledgement Form
         </button>
-        <button onClick={() => handleAcknowledgeMock('Acknowledgement Email')} className="px-3.5 py-1.5 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-xl hover:bg-indigo-100">
-          ✉️ Send Acknowledgement Email
+        <button onClick={handleSendAckEmail} disabled={sendingEmail} className="px-3.5 py-1.5 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-xl hover:bg-indigo-100 disabled:opacity-50">
+          {sendingEmail ? '✉️ Sending...' : '✉️ Send Acknowledgement Email'}
         </button>
         <button onClick={() => window.print()} className="px-3.5 py-1.5 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-xl hover:bg-indigo-100">
           🖨️ Print User Profile
