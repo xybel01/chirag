@@ -400,17 +400,19 @@ export default function AssetCategoryList({ type }) {
           </div>
 
           {/* SECTION 4: NETWORK & LOCATION DETAILS */}
-          <div className="space-y-3">
-            <h4 className="font-extrabold text-indigo-900 border-b border-indigo-50 pb-1 text-2xs uppercase tracking-wider">4. Network & Location Details</h4>
-            <div className="grid gap-3 md:grid-cols-2">
-              <Field label="LAN WAN IP Address">
-                <input className="input" placeholder="e.g. 192.168.1.100" value={form.wanIp || ''} onChange={(e) => setForm({ ...form, wanIp: e.target.value })} />
-              </Field>
-              <Field label="MAC Address / ID">
-                <input className="input" placeholder="e.g. 00:1A:2B:3C:4D:5E" value={form.wifiMac || ''} onChange={(e) => setForm({ ...form, wifiMac: e.target.value })} />
-              </Field>
+          {!['Monitor', 'Accessories'].includes(form.category) && (
+            <div className="space-y-3">
+              <h4 className="font-extrabold text-indigo-900 border-b border-indigo-50 pb-1 text-2xs uppercase tracking-wider">4. Network & Location Details</h4>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Field label="LAN WAN IP Address">
+                  <input className="input" placeholder="e.g. 192.168.1.100" value={form.wanIp || ''} onChange={(e) => setForm({ ...form, wanIp: e.target.value })} />
+                </Field>
+                <Field label="MAC Address / ID">
+                  <input className="input" placeholder="e.g. 00:1A:2B:3C:4D:5E" value={form.wifiMac || ''} onChange={(e) => setForm({ ...form, wifiMac: e.target.value })} />
+                </Field>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="flex justify-end gap-2 border-t border-gray-100 pt-4 mt-6">
             <button type="button" className="btn-secondary" onClick={() => setModalOpen(false)}>Cancel</button>
