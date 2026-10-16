@@ -1,10 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function AteraAgentDeploy() {
   const [copied, setCopied] = useState(false);
   const [testStatus, setTestStatus] = useState(null);
+  const [testing, setTesting] = useState(false);
 
-  const installCmd = 'irm http://localhost:5005/api/agent/install.ps1 | iex';
+  // Dynamically determine current portal URL (live Vercel or localhost)
+  const defaultUrl = typeof window !== 'undefined' ? window.location.origin : 'https://nplitinventory.vercel.app';
+  const [serverUrl, setServerUrl] = useState(defaultUrl);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.location.origin) {
+      setServerUrl(window.location.origin);
+    }
+  }, []);
+
+  const cleanServerUrl = (serverUrl || defaultUrl).replace(/\/+$/, '');
+  const installCmd = `irm ${cleanServerUrl}/api/agent/install.ps1?serverUrl=${encodeURIComponent(cleanServerUrl)} | iex`;
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(installCmd);
@@ -13,17 +25,20 @@ export default function AteraAgentDeploy() {
   };
 
   const handleTestHealth = async () => {
-    setTestStatus('Testing portal agent listener...');
+    setTesting(true);
+    setTestStatus('Pinging portal agent telemetry listener...');
     try {
-      const res = await fetch('http://localhost:5005/api/health');
+      const res = await fetch(`${cleanServerUrl}/api/health`);
       const data = await res.json();
       if (data.status === 'ok') {
-        setTestStatus('SUCCESS: Portal API is actively listening on port 5005. Agents can connect seamlessly.');
+        setTestStatus(`SUCCESS: Connected to ${cleanServerUrl}! Agent listener is actively responding.`);
       } else {
-        setTestStatus('WARNING: Received non-ok status from portal.');
+        setTestStatus(`WARNING: Received unexpected status from ${cleanServerUrl}.`);
       }
     } catch (e) {
-      setTestStatus('ERROR: Could not connect to API on localhost:5005. Please ensure backend is running.');
+      setTestStatus(`ERROR: Could not connect to ${cleanServerUrl}/api/health. Please verify network access.`);
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -33,12 +48,49 @@ export default function AteraAgentDeploy() {
         <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
           <span>Atera RMM Agent Deployment Center</span>
           <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-cyan-50 text-cyan-700 border border-cyan-200">
-            v2.5 Production
+            v2.5 Cloud & On-Premise
           </span>
         </h1>
         <p className="text-xs text-slate-500 mt-1">
           Deploy lightweight endpoint monitoring agents to Windows workstations, servers, macOS, and Linux systems.
         </p>
+      </div>
+
+      {/* Target Server URL Selector / Configurator */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <label className="text-3xs font-extrabold uppercase tracking-wider text-slate-500">
+              Active Portal / Telemetry Server URL
+            </label>
+            <p className="text-3xs text-slate-450">
+              The agent will post all vitals, heartbeats, and pull commands from this live endpoint.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1.5 text-3xs font-bold">
+            <button
+              onClick={() => setServerUrl(typeof window !== 'undefined' ? window.location.origin : 'https://nplitinventory.vercel.app')}
+              className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-colors"
+            >
+              Current Domain ({typeof window !== 'undefined' ? window.location.hostname : 'Cloud'})
+            </button>
+            <button
+              onClick={() => setServerUrl('http://localhost:5005')}
+              className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+            >
+              Localhost (5005)
+            </button>
+          </div>
+        </div>
+
+        <input
+          type="text"
+          value={serverUrl}
+          onChange={(e) => setServerUrl(e.target.value)}
+          placeholder="https://nplitinventory.vercel.app"
+          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+        />
       </div>
 
       {/* Primary 1-Click PowerShell Installation */}
@@ -69,11 +121,11 @@ export default function AteraAgentDeploy() {
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-cyan-400">2.</span>
-            <span>Paste the command and hit Enter. The script installs files to <code>C:\Program Files\AteraAgent</code>.</span>
+            <span>Paste the command and hit Enter. The agent installs to <code>C:\Program Files\AteraAgent</code>.</span>
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-cyan-400">3.</span>
-            <span>A Windows Scheduled Task is registered to start automatically on system startup.</span>
+            <span>Configures a background task to report metrics and listen for commands automatically.</span>
           </div>
         </div>
       </div>
@@ -82,7 +134,9 @@ export default function AteraAgentDeploy() {
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-4">
         <div>
           <h2 className="text-sm font-extrabold text-slate-900">Direct Downloadable Agent Packages</h2>
-          <p className="text-xs text-slate-500 mt-0.5">Use these files for offline installations, Group Policy (GPO), or Microsoft Intune.</p>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Pre-configured with target server <strong>{cleanServerUrl}</strong> for offline setups, GPO, or Intune.
+          </p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -94,7 +148,7 @@ export default function AteraAgentDeploy() {
               <p className="text-3xs text-slate-500">1-Click batch installer. Right click and select "Run as administrator".</p>
             </div>
             <a
-              href="/api/agent/download/installer-bat"
+              href={`${cleanServerUrl}/api/agent/download/installer-bat?serverUrl=${encodeURIComponent(cleanServerUrl)}`}
               download="Install-AteraAgent.bat"
               className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl text-center block transition-colors"
             >
@@ -107,10 +161,10 @@ export default function AteraAgentDeploy() {
             <div className="space-y-1">
               <span className="text-3xs font-extrabold uppercase px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">PowerShell (.ps1)</span>
               <h3 className="font-extrabold text-sm text-slate-900 pt-1">AteraAgent.ps1</h3>
-              <p className="text-3xs text-slate-500">Full source agent script with continuous monitoring and task execution.</p>
+              <p className="text-3xs text-slate-500">Full source agent script pre-configured for {cleanServerUrl}.</p>
             </div>
             <a
-              href="/api/agent/download/powershell"
+              href={`${cleanServerUrl}/api/agent/download/powershell?serverUrl=${encodeURIComponent(cleanServerUrl)}`}
               download="AteraAgent.ps1"
               className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl text-center block transition-colors"
             >
@@ -126,7 +180,7 @@ export default function AteraAgentDeploy() {
               <p className="text-3xs text-slate-500">Python 3 agent for macOS, Linux, and Windows terminal servers.</p>
             </div>
             <a
-              href="/api/agent/download/python"
+              href={`${cleanServerUrl}/api/agent/download/python?serverUrl=${encodeURIComponent(cleanServerUrl)}`}
               download="atera_agent.py"
               className="w-full py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs rounded-xl text-center block transition-colors"
             >
@@ -140,7 +194,9 @@ export default function AteraAgentDeploy() {
       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div>
           <h3 className="font-bold text-xs text-slate-800">Verify Portal Agent Ingestion</h3>
-          <p className="text-3xs text-slate-500 mt-0.5">Test whether this machine can reach the Atera telemetry ingestion endpoint.</p>
+          <p className="text-3xs text-slate-500 mt-0.5">
+            Test whether this machine can reach <strong>{cleanServerUrl}</strong>.
+          </p>
           {testStatus && (
             <div className={`text-xs font-bold mt-2 ${testStatus.startsWith('SUCCESS') ? 'text-emerald-600' : 'text-rose-600'}`}>
               {testStatus}
@@ -150,9 +206,10 @@ export default function AteraAgentDeploy() {
 
         <button
           onClick={handleTestHealth}
-          className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 text-slate-800 font-bold text-xs rounded-xl shadow-sm transition-colors whitespace-nowrap"
+          disabled={testing}
+          className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-50 text-slate-800 font-bold text-xs rounded-xl shadow-sm transition-colors whitespace-nowrap"
         >
-          Test Connection
+          {testing ? 'Testing...' : 'Test Connection'}
         </button>
       </div>
     </div>

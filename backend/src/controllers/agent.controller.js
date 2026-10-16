@@ -90,12 +90,13 @@ async function submitTaskResult(req, res) {
 
 /**
  * Dynamic 1-Click PowerShell Installer Script
- * Usage: irm http://localhost:5005/api/agent/install.ps1 | iex
+ * Automatically adapts to live Vercel/production domain or custom URL
  */
 async function getInstallScript(req, res) {
-  const host = req.get('host') || 'localhost:5005';
-  const protocol = req.protocol || 'http';
-  const baseUrl = `${protocol}://${host}`;
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const host = req.headers['x-forwarded-host'] || req.get('host') || 'localhost:5005';
+  const queryUrl = req.query.serverUrl;
+  const baseUrl = queryUrl || `${protocol}://${host}`;
 
   const script = `# =======================================================
 # Atera RMM Unified Agent Automated One-Click Installer
@@ -108,7 +109,7 @@ Write-Host "   Atera RMM Agent Automated Installer    " -ForegroundColor Green
 Write-Host "==========================================" -ForegroundColor Cyan
 
 $InstallDir = "C:\\Program Files\\AteraAgent"
-$ScriptUrl = "${baseUrl}/api/agent/download/powershell"
+$ScriptUrl = "${baseUrl}/api/agent/download/powershell?serverUrl=${encodeURIComponent(baseUrl)}"
 $AgentScriptPath = Join-Path $InstallDir "AteraAgent.ps1"
 
 if (-not (Test-Path $InstallDir)) {
@@ -121,7 +122,7 @@ Invoke-WebRequest -Uri $ScriptUrl -OutFile $AgentScriptPath -UseBasicParsing
 
 Write-Host "[3/4] Configuring automated Windows Task (Runs on boot & every 5 mins)..." -ForegroundColor Yellow
 $TaskName = "AteraRmmAgent"
-$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \`"$AgentScriptPath\`" -Loop"
+$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \`"$AgentScriptPath\`" -Loop -ServerUrl \`"${baseUrl}\`""
 $Trigger = New-ScheduledTaskTrigger -AtStartup
 $Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
@@ -133,11 +134,11 @@ Write-Host "[4/4] Launching Atera RMM Agent in background..." -ForegroundColor Y
 Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 
 # Also launch an initial foreground scan
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$AgentScriptPath" -Once
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$AgentScriptPath" -Once -ServerUrl "${baseUrl}"
 
 Write-Host "======================================================" -ForegroundColor Green
 Write-Host "  SUCCESS: Atera RMM Agent successfully installed!    " -ForegroundColor Green
-Write-Host "  Device is now actively reporting to $baseUrl        " -ForegroundColor Cyan
+Write-Host "  Device is now actively reporting to ${baseUrl}      " -ForegroundColor Cyan
 Write-Host "======================================================" -ForegroundColor Green
 `;
 
@@ -146,33 +147,47 @@ Write-Host "======================================================" -ForegroundC
 }
 
 /**
- * Download Agent Files
+ * Download Agent Files with Dynamic Live ServerUrl Binding
  */
 async function downloadAgent(req, res) {
   const { type } = req.params;
   const rootDir = path.resolve(__dirname, '../../..');
+  const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  const host = req.headers['x-forwarded-host'] || req.get('host') || 'localhost:5005';
+  const queryUrl = req.query.serverUrl;
+  const baseUrl = queryUrl || `${protocol}://${host}`;
 
   if (type === 'powershell') {
     const file = path.join(rootDir, 'AteraAgent.ps1');
     if (fs.existsSync(file)) {
+      let content = fs.readFileSync(file, 'utf8');
+      content = content.replace(/\[string\]\$ServerUrl\s*=\s*"[^"]*"/, `[string]$ServerUrl = "${baseUrl}"`);
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Content-Disposition', 'attachment; filename="AteraAgent.ps1"');
-      return res.sendFile(file);
+      return res.send(content);
     }
   }
 
   if (type === 'installer-bat') {
     const file = path.join(rootDir, 'Install-AteraAgent.bat');
     if (fs.existsSync(file)) {
+      let content = fs.readFileSync(file, 'utf8');
+      content = content.replace(/https:\/\/nplitinventory\.vercel\.app/g, baseUrl)
+                       .replace(/http:\/\/localhost:5005/g, baseUrl);
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Content-Disposition', 'attachment; filename="Install-AteraAgent.bat"');
-      return res.sendFile(file);
+      return res.send(content);
     }
   }
 
   if (type === 'python') {
     const file = path.join(rootDir, 'atera_agent.py');
     if (fs.existsSync(file)) {
+      let content = fs.readFileSync(file, 'utf8');
+      content = content.replace(/http:\/\/localhost:5005/g, baseUrl);
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Content-Disposition', 'attachment; filename="atera_agent.py"');
-      return res.sendFile(file);
+      return res.send(content);
     }
   }
 

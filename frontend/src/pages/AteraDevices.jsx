@@ -31,9 +31,11 @@ export default function AteraDevices() {
     return () => clearInterval(interval);
   }, [filterStatus, filterType, search]);
 
+  const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://nplitinventory.vercel.app';
+  const installCmd = `irm ${originUrl}/api/agent/install.ps1 | iex`;
+
   const copyInstallCommand = () => {
-    const cmd = 'irm http://localhost:5005/api/agent/install.ps1 | iex';
-    navigator.clipboard.writeText(cmd);
+    navigator.clipboard.writeText(installCmd);
     setCopiedCmd(true);
     setTimeout(() => setCopiedCmd(false), 3000);
   };
@@ -341,7 +343,7 @@ export default function AteraDevices() {
                 </button>
               </div>
               <div className="font-mono text-xs bg-slate-950 p-2.5 rounded-lg text-emerald-400 select-all overflow-x-auto">
-                irm http://localhost:5005/api/agent/install.ps1 | iex
+                {installCmd}
               </div>
               <p className="text-3xs text-slate-400">
                 Run Windows PowerShell as Administrator and paste the command above. It will download, configure the background task, and start monitoring immediately.

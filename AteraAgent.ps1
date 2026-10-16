@@ -23,6 +23,17 @@ param(
 
 $ErrorActionPreference = "SilentlyContinue"
 
+# Ensure TLS 1.2 and 1.3 support for secure HTTPS connection to cloud/Vercel
+try {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11
+} catch {}
+
+# Clean ServerUrl
+$ServerUrl = $ServerUrl.TrimEnd('/')
+if (-not $ServerUrl.StartsWith("http://") -and -not $ServerUrl.StartsWith("https://")) {
+    $ServerUrl = "https://$ServerUrl"
+}
+
 $LogDir = "C:\ProgramData\AteraAgent\Logs"
 if (-not (Test-Path $LogDir)) {
     New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
@@ -43,7 +54,7 @@ $RegistrationToken = "ITAM-AGENT-SECURE-TOKEN-2026"
 $SubmitUrl = "$ServerUrl/api/agent/submit"
 $TaskUrl   = "$ServerUrl/api/agent/tasks"
 
-Write-AgentLog "Starting Atera RMM Endpoint Agent v2.5..."
+Write-AgentLog "Starting Atera RMM Endpoint Agent v2.5 (Target: $ServerUrl)..."
 
 function Get-SystemMetrics {
     $CS = Get-CimInstance Win32_ComputerSystem
