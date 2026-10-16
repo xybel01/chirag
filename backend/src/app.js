@@ -6,7 +6,7 @@ const { apiLimiter } = require('./middleware/rateLimit');
 const errorHandler = require('./middleware/errorHandler');
 
 const app = express();
-app.set('trust proxy', 1); // behind nginx
+app.set('trust proxy', true);
 
 app.use(helmet());
 
