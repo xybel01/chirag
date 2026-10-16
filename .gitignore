@@ -1,8 +1,17 @@
 node_modules/
 dist/
 .env
+.env*
+*.env*
+backend/.env
+backend/.env*
+frontend/.env
+frontend/.env*
 uploads/*
 !uploads/.gitkeep
+backend/uploads/*
+!backend/uploads/.gitkeep
 backups/*
 !backups/.gitkeep
 *.log
+.vercel

@@ -601,3 +601,56 @@ model PurchaseOrder {
   costCenter    String
   createdAt     DateTime @default(now())
 }
+
+// ==========================================
+// ATERA RMM & AUTOMATION MODELS
+// ==========================================
+
+model DeviceTask {
+  id           String    @id @default(uuid())
+  serialNumber String
+  commandType  String    // POWERSHELL, CMD, SCRIPT, KILL_PROCESS, SERVICE_ACTION, REBOOT
+  commandText  String
+  parameters   String?
+  status       String    @default("PENDING") // PENDING, RUNNING, COMPLETED, FAILED
+  output       String?
+  errorOutput  String?
+  exitCode     Int?
+  requestedBy  String?
+  createdAt    DateTime  @default(now())
+  executedAt   DateTime?
+  completedAt  DateTime?
+
+  @@index([serialNumber, status])
+}
+
+model DeviceAlert {
+  id           String    @id @default(uuid())
+  serialNumber String
+  deviceName   String
+  severity     String    // CRITICAL, WARNING, INFO
+  category     String    // CPU, MEMORY, DISK, OFFLINE, SECURITY
+  title        String
+  description  String
+  status       String    @default("OPEN") // OPEN, ACKNOWLEDGED, RESOLVED
+  ticketId     Int?
+  createdAt    DateTime  @default(now())
+  resolvedAt   DateTime?
+
+  @@index([serialNumber])
+  @@index([status])
+}
+
+model AutomationScript {
+  id          Int       @id @default(autoincrement())
+  name        String
+  description String?
+  category    String    @default("Maintenance") // Maintenance, Security, Diagnostics, Software
+  language    String    @default("PowerShell") // PowerShell, Batch, Python, Bash
+  code        String
+  timeoutSec  Int       @default(60)
+  isBuiltIn   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+

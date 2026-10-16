@@ -22,4 +22,4 @@ async function authenticate(req, _res, next) {
   }
 }
 
-module.exports = { authenticate };
+module.exports = { authenticate, requireAuth: authenticate };

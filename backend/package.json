@@ -10,7 +10,8 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:dev": "prisma migrate dev",
     "seed": "node prisma/seed.js",
-    "backup": "bash scripts/backup.sh"
+    "backup": "bash scripts/backup.sh",
+    "vercel-build": "prisma generate"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

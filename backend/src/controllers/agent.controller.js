@@ -1,142 +1,188 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const fs = require('fs');
+const path = require('path');
+const agentOrchestrator = require('../services/agentOrchestrator');
 
-// Secret validation token
 const REGISTRATION_TOKEN = 'ITAM-AGENT-SECURE-TOKEN-2026';
 
+/**
+ * Agent Heartbeat & Telemetry Ingestion
+ */
 async function submit(req, res) {
   const token = req.headers['x-registration-token'] || req.body.registrationToken;
   if (token !== REGISTRATION_TOKEN) {
     return res.status(401).json({ error: 'Unauthorized: Invalid registration token.' });
   }
 
-  const {
-    hostName,
-    manufacturer,
-    model,
-    serialNumber,
-    cpu,
-    ram,
-    storage,
-    operatingSystem,
-    macAddress,
-    ipAddress,
-    installedSoftware,
-    mouseDevice,
-    headphoneDevice,
-    cameraDevice
-  } = req.body;
-
+  const { serialNumber } = req.body;
   if (!serialNumber) {
     return res.status(400).json({ error: 'Bad Request: serialNumber is required.' });
   }
 
   try {
-    // 1. Get Category ID (Laptop / Desktop / Computer)
-    const lowerModel = String(model || '').toLowerCase();
-    const catCode = lowerModel.includes('laptop') || lowerModel.includes('notebook') ? 'LAP' : 'DSK';
-    const catName = catCode === 'LAP' ? 'Laptop' : 'Desktop';
-    
-    let category = await prisma.category.findUnique({ where: { code: catCode } });
-    if (!category) {
-      category = await prisma.category.create({ data: { name: catName, code: catCode } });
-    }
-
-    // 2. Format notes with custom fields & software list
-    const softwareStr = (installedSoftware || [])
-      .map(s => `- ${s.name} (${s.version || 'unknown'})`)
-      .join('\n');
-    
-    const formattedNotes = `Host Name: ${hostName || 'unknown'}\n` +
-      `MAC Address: ${macAddress || 'unknown'}\n` +
-      `IP Address: ${ipAddress || 'unknown'}\n` +
-      `Connected Mouse: ${mouseDevice || 'Generic Mouse'}\n` +
-      `Connected Headphone: ${headphoneDevice || 'Generic Headset'}\n` +
-      `Connected Camera: ${cameraDevice || 'Integrated Camera'}\n` +
-      `Remark: Auto-Synced by Windows Agent\n` +
-      `Installed Software:\n${softwareStr}`;
-
-    // 3. Find if Asset exists by serialNumber
-    let asset = await prisma.asset.findUnique({ where: { serialNumber } });
-
-    const dataObj = {
-      model: model || 'System Model',
-      manufacturer: manufacturer || 'Generic',
-      categoryId: category.id,
-      cpu: cpu || null,
-      ram: ram || null,
-      storage: storage || null,
-      notes: formattedNotes,
-      updatedAt: new Date(),
-    };
-
-    if (asset) {
-      // Check if hardware details changed to log in audit
-      const before = { ram: asset.ram, cpu: asset.cpu, storage: asset.storage };
-      const after = { ram: dataObj.ram, cpu: dataObj.cpu, storage: dataObj.storage };
-
-      asset = await prisma.asset.update({
-        where: { id: asset.id },
-        data: dataObj,
-      });
-
-      // Audit hardware specs change if modified
-      if (JSON.stringify(before) !== JSON.stringify(after)) {
-        await prisma.auditLog.create({
-          data: {
-            action: 'UPDATE',
-            entity: 'Asset',
-            entityId: String(asset.id),
-            before: before,
-            after: after,
-            ip: req.ip || '127.0.0.1',
-          }
-        });
-      }
-    } else {
-      // Generate new custom tag (detect company from hostname or default)
-      const isNpl = String(hostName).toUpperCase().includes('NPL') || String(hostName).toUpperCase().includes('NATIONWIDE');
-      const companyPrefix = isNpl ? 'NPL' : 'VSDENT';
-      const typeSuffix = catCode === 'LAP' ? 'LT' : 'DT';
-      const tagPrefix = `${companyPrefix}-${typeSuffix}-`;
-
-      const count = await prisma.asset.count({
-        where: { assetTag: { startsWith: tagPrefix } }
-      });
-      const assetTag = `${tagPrefix}${String(count + 1).padStart(4, '0')}`;
-
-      // Create new asset
-      asset = await prisma.asset.create({
-        data: {
-          assetTag,
-          serialNumber,
-          status: 'AVAILABLE',
-          ...dataObj,
-        }
-      });
-
-      // Log creation in audit
-      await prisma.auditLog.create({
-        data: {
-          action: 'CREATE',
-          entity: 'Asset',
-          entityId: String(asset.id),
-          after: { assetTag, serialNumber },
-          ip: req.ip || '127.0.0.1',
-        }
-      });
-    }
-
+    const liveDevice = await agentOrchestrator.processAgentHeartbeat(req.body);
     return res.json({
       success: true,
-      message: 'Agent inventory sync successful.',
-      assetId: asset.assetTag
+      message: 'Telemetry synced successfully',
+      deviceId: liveDevice.serialNumber,
+      assetTag: liveDevice.assetTag,
+      timestamp: new Date().toISOString()
     });
-
   } catch (error) {
     console.error('Agent submit endpoint error:', error);
     return res.status(500).json({ error: 'Internal Server Error: ' + error.message });
   }
 }
 
-module.exports = { submit };
+/**
+ * Agent Polling for Pending Tasks (Commands, Scripts, Process Kills, etc.)
+ */
+async function pollTasks(req, res) {
+  const token = req.headers['x-registration-token'] || req.query.token;
+  if (token !== REGISTRATION_TOKEN) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid registration token.' });
+  }
+
+  const serialNumber = req.query.serialNumber;
+  if (!serialNumber) {
+    return res.status(400).json({ error: 'serialNumber query param is required' });
+  }
+
+  try {
+    const tasks = await agentOrchestrator.getPendingTasksForAgent(serialNumber);
+    return res.json({
+      success: true,
+      tasks
+    });
+  } catch (error) {
+    console.error('Agent pollTasks error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * Agent Submitting Task Results (stdout, stderr, exitCode)
+ */
+async function submitTaskResult(req, res) {
+  const token = req.headers['x-registration-token'] || req.body.registrationToken;
+  if (token !== REGISTRATION_TOKEN) {
+    return res.status(401).json({ error: 'Unauthorized: Invalid registration token.' });
+  }
+
+  const { taskId } = req.params;
+  const { output, errorOutput, exitCode } = req.body;
+
+  try {
+    const updated = await agentOrchestrator.recordTaskResult(taskId, {
+      output,
+      errorOutput,
+      exitCode
+    });
+
+    return res.json({
+      success: true,
+      task: updated
+    });
+  } catch (error) {
+    console.error('submitTaskResult error:', error);
+    return res.status(500).json({ error: error.message });
+  }
+}
+
+/**
+ * Dynamic 1-Click PowerShell Installer Script
+ * Usage: irm http://localhost:5005/api/agent/install.ps1 | iex
+ */
+async function getInstallScript(req, res) {
+  const host = req.get('host') || 'localhost:5005';
+  const protocol = req.protocol || 'http';
+  const baseUrl = `${protocol}://${host}`;
+
+  const script = `# =======================================================
+# Atera RMM Unified Agent Automated One-Click Installer
+# Server URL: ${baseUrl}
+# =======================================================
+
+$ErrorActionPreference = "Stop"
+Write-Host "==========================================" -ForegroundColor Cyan
+Write-Host "   Atera RMM Agent Automated Installer    " -ForegroundColor Green
+Write-Host "==========================================" -ForegroundColor Cyan
+
+$InstallDir = "C:\\Program Files\\AteraAgent"
+$ScriptUrl = "${baseUrl}/api/agent/download/powershell"
+$AgentScriptPath = Join-Path $InstallDir "AteraAgent.ps1"
+
+if (-not (Test-Path $InstallDir)) {
+    Write-Host "[1/4] Creating installation directory: $InstallDir" -ForegroundColor Yellow
+    New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
+}
+
+Write-Host "[2/4] Downloading latest Atera RMM Agent script..." -ForegroundColor Yellow
+Invoke-WebRequest -Uri $ScriptUrl -OutFile $AgentScriptPath -UseBasicParsing
+
+Write-Host "[3/4] Configuring automated Windows Task (Runs on boot & every 5 mins)..." -ForegroundColor Yellow
+$TaskName = "AteraRmmAgent"
+$Action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File \`"$AgentScriptPath\`" -Loop"
+$Trigger = New-ScheduledTaskTrigger -AtStartup
+$Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+$Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+
+Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+Register-ScheduledTask -TaskName $TaskName -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force | Out-Null
+
+Write-Host "[4/4] Launching Atera RMM Agent in background..." -ForegroundColor Yellow
+Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+
+# Also launch an initial foreground scan
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$AgentScriptPath" -Once
+
+Write-Host "======================================================" -ForegroundColor Green
+Write-Host "  SUCCESS: Atera RMM Agent successfully installed!    " -ForegroundColor Green
+Write-Host "  Device is now actively reporting to $baseUrl        " -ForegroundColor Cyan
+Write-Host "======================================================" -ForegroundColor Green
+`;
+
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  return res.send(script);
+}
+
+/**
+ * Download Agent Files
+ */
+async function downloadAgent(req, res) {
+  const { type } = req.params;
+  const rootDir = path.resolve(__dirname, '../../..');
+
+  if (type === 'powershell') {
+    const file = path.join(rootDir, 'AteraAgent.ps1');
+    if (fs.existsSync(file)) {
+      res.setHeader('Content-Disposition', 'attachment; filename="AteraAgent.ps1"');
+      return res.sendFile(file);
+    }
+  }
+
+  if (type === 'installer-bat') {
+    const file = path.join(rootDir, 'Install-AteraAgent.bat');
+    if (fs.existsSync(file)) {
+      res.setHeader('Content-Disposition', 'attachment; filename="Install-AteraAgent.bat"');
+      return res.sendFile(file);
+    }
+  }
+
+  if (type === 'python') {
+    const file = path.join(rootDir, 'atera_agent.py');
+    if (fs.existsSync(file)) {
+      res.setHeader('Content-Disposition', 'attachment; filename="atera_agent.py"');
+      return res.sendFile(file);
+    }
+  }
+
+  return res.status(404).json({ error: 'Agent file not found' });
+}
+
+module.exports = {
+  submit,
+  pollTasks,
+  submitTaskResult,
+  getInstallScript,
+  downloadAgent
+};
