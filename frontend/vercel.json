@@ -1,6 +1,10 @@
 {
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://bug-done-paying-copyrighted.trycloudflare.com/api/:path*"
+    },
+    {
       "source": "/((?!.*\\.(?:ps1|bat|py|js|css|png|jpg|svg|ico|json|txt)$).*)",
       "destination": "/index.html"
     }

@@ -2,7 +2,8 @@ const rateLimit = require('express-rate-limit');
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 600,
+  max: 10000,
+  skip: (req) => req.path.startsWith('/agent') || req.path.startsWith('/health'),
   standardHeaders: true,
   legacyHeaders: false,
 });
