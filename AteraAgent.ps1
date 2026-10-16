@@ -91,7 +91,7 @@ function Verify-ActiveServer {
     return $Script:ActiveServerUrl
 }
 
-Write-AgentLog "Starting Atera RMM Endpoint Agent v2.5 (Target: $Script:ActiveServerUrl)..."
+Write-AgentLog "Starting Atera RMM Endpoint Agent v2.5 (Target: $($Script:ActiveServerUrl))..."
 
 function Get-SystemMetrics {
     $CS = Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue
@@ -258,7 +258,7 @@ function Send-Heartbeat {
         Write-AgentLog "Heartbeat reported successfully to $Target. Server replied: $($Resp.StatusCode)"
         return $true
     } catch {
-        Write-AgentLog "Failed to post heartbeat to $Target: $_" -Level "WARNING"
+        Write-AgentLog "Failed to post heartbeat to $($Target): $_" -Level "WARNING"
         return $false
     }
 }
