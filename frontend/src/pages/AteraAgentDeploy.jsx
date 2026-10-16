@@ -16,7 +16,7 @@ export default function AteraAgentDeploy() {
   }, []);
 
   const cleanServerUrl = (serverUrl || defaultUrl).replace(/\/+$/, '');
-  const installCmd = `irm ${cleanServerUrl}/api/agent/install.ps1?serverUrl=${encodeURIComponent(cleanServerUrl)} | iex`;
+  const installCmd = `irm ${cleanServerUrl}/install.ps1 | iex`;
 
   const copyToClipboard = () => {
     navigator.clipboard.writeText(installCmd);
@@ -148,7 +148,7 @@ export default function AteraAgentDeploy() {
               <p className="text-3xs text-slate-500">1-Click batch installer. Right click and select "Run as administrator".</p>
             </div>
             <a
-              href={`${cleanServerUrl}/api/agent/download/installer-bat?serverUrl=${encodeURIComponent(cleanServerUrl)}`}
+              href="/Install-AteraAgent.bat"
               download="Install-AteraAgent.bat"
               className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl text-center block transition-colors"
             >
@@ -161,10 +161,10 @@ export default function AteraAgentDeploy() {
             <div className="space-y-1">
               <span className="text-3xs font-extrabold uppercase px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">PowerShell (.ps1)</span>
               <h3 className="font-extrabold text-sm text-slate-900 pt-1">AteraAgent.ps1</h3>
-              <p className="text-3xs text-slate-500">Full source agent script pre-configured for {cleanServerUrl}.</p>
+              <p className="text-3xs text-slate-500">Full source agent script with continuous monitoring.</p>
             </div>
             <a
-              href={`${cleanServerUrl}/api/agent/download/powershell?serverUrl=${encodeURIComponent(cleanServerUrl)}`}
+              href="/AteraAgent.ps1"
               download="AteraAgent.ps1"
               className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl text-center block transition-colors"
             >
@@ -180,7 +180,7 @@ export default function AteraAgentDeploy() {
               <p className="text-3xs text-slate-500">Python 3 agent for macOS, Linux, and Windows terminal servers.</p>
             </div>
             <a
-              href={`${cleanServerUrl}/api/agent/download/python?serverUrl=${encodeURIComponent(cleanServerUrl)}`}
+              href="/atera_agent.py"
               download="atera_agent.py"
               className="w-full py-2 bg-cyan-600 hover:bg-cyan-700 text-white font-bold text-xs rounded-xl text-center block transition-colors"
             >
